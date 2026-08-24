@@ -781,7 +781,9 @@
             worldMouseY = mouseY + camera.y;
         });
         
-        canvas.addEventListener('mousedown', shoot);
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) shoot();
+        });
         
         function showBuffNotification(text) {
             const el = document.getElementById('buffNotification');
