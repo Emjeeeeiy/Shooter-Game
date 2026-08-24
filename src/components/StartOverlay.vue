@@ -4,7 +4,7 @@ defineEmits(['start']);
 const controls = [
   { keys: ['W', 'A', 'S', 'D'], action: 'Move' },
   { keys: ['Mouse'], action: 'Aim' },
-  { keys: ['Right Click'], action: 'Fire plasma' },
+  { keys: ['Left Click'], action: 'Fire plasma' },
   { keys: ['Shift'], action: 'Dash — invincible, kills on contact' },
   { keys: ['C'], action: 'Missile volley — 10 homing, 5s' },
   { keys: ['E'], action: 'Shock wave — clears the field, 15s' },

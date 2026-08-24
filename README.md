@@ -13,7 +13,7 @@ npm run dev
 
 * **WASD**: Move
 * **Mouse**: Aim
-* **Right Click**: Fire
+* **Left Click**: Fire
 * **Shift**: Dash (invincible, kills on contact)
 * **C**: Homing Missiles
 * **E**: Shockwave (clears the field)

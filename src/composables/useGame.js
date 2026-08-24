@@ -127,13 +127,9 @@ export function useGame() {
   }
 
   function onPointerDown(event) {
-    if (event.button !== 2) return;
+    if (event.button !== 0) return;
     onPointerMove(event);
     game.value?.setFireHeld(true);
-  }
-
-  function onContextMenu(event) {
-    event.preventDefault();
   }
 
   function releaseFire() {
@@ -157,7 +153,6 @@ export function useGame() {
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
     window.addEventListener('mouseup', releaseFire);
-    window.addEventListener('contextmenu', onContextMenu);
     window.addEventListener('resize', scaleCanvas);
 
     previous = performance.now();
@@ -174,7 +169,6 @@ export function useGame() {
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('mouseup', releaseFire);
-    window.removeEventListener('contextmenu', onContextMenu);
     window.removeEventListener('resize', scaleCanvas);
   });
 

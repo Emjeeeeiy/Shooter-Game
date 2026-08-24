@@ -784,6 +784,10 @@
         canvas.addEventListener('mousedown', (e) => {
             if (e.button === 0) shoot();
         });
+
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
         
         function showBuffNotification(text) {
             const el = document.getElementById('buffNotification');

@@ -183,7 +183,7 @@ export class Game {
     this.fireHeld = false;
   }
 
-  /** Held fire button (mouse or Space) — the loop paces the shots. */
+  /** Held fire button (left mouse) — the loop paces the shots. */
   setFireHeld(isDown) {
     this.fireHeld = isDown;
     if (!isDown) return;
