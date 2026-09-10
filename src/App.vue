@@ -21,6 +21,8 @@ import { music } from './game/music.js';
 // Screens: auth → menu → settings | lobby → arena | rooms → arena(race)
 const screen = ref('auth');
 const selected = ref('vanguard');
+const mapPick = ref('grid');
+const runMapId = ref('grid');
 const runId = ref(0);
 const race = ref(null); // { code, uid, name, seed, mode } when racing
 const roomCode = ref(''); // rejoin target for the rooms screen
@@ -109,6 +111,7 @@ onMounted(() => {
   sfx.setVolume(settings.volume);
   syncMusic();
   window.addEventListener('pointerdown', music.unlock, { once: true });
+  window.addEventListener('keydown', music.unlock, { once: true });
 });
 
 function syncMusic() {
@@ -169,9 +172,15 @@ function toLobby() {
   screen.value = 'lobby';
 }
 
+const MAP_IDS = ['grid', 'debris', 'pillars', 'void'];
+
 function launchRun() {
   runId.value += 1;
   race.value = null;
+  runMapId.value =
+    mapPick.value === 'random'
+      ? MAP_IDS[Math.floor(Math.random() * MAP_IDS.length)]
+      : mapPick.value;
   screen.value = 'arena';
 }
 
@@ -184,16 +193,18 @@ async function onDeploy(code) {
   roomCode.value = code;
   let seed;
   let mode = 'arcade';
+  let mapId = 'grid';
   try {
     const r = await getRoom(code);
     if (r) {
       seed = r.seed ?? undefined;
       mode = r.mode ?? 'arcade';
+      mapId = r.map ?? 'grid';
     }
   } catch {
-    // room read failed — run unseeded
+    // room read failed — run unseeded on the classic map
   }
-  race.value = { code, uid: user.value.uid, name: pilotName.value, seed, mode };
+  race.value = { code, uid: user.value.uid, name: pilotName.value, seed, mode, mapId };
   runId.value += 1;
   screen.value = 'arena';
 }
@@ -253,7 +264,7 @@ async function onRunSaved({ name, score, wave, stats }) {
 
 <template>
   <div :class="screen === 'arena' ? 'h-dvh w-full overflow-hidden' : 'min-h-dvh w-full px-4 py-8 sm:px-6 lg:py-10'">
-    <BattleBackground v-if="screen === 'auth' || screen === 'menu'" />
+    <BattleBackground v-if="screen !== 'arena'" />
     <div :class="screen === 'arena' ? 'relative z-10 mx-auto flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6'">
       <header v-if="screen !== 'arena'" class="flex w-full items-center justify-between gap-4">
         <div class="flex items-center gap-2.5">
@@ -327,6 +338,7 @@ async function onRunSaved({ name, score, wave, stats }) {
         :email="user?.email ?? ''"
         :offline="offline"
         :best="best"
+        :cloud="canCloud"
         @single="toLobby"
         @multi="toRooms"
         @settings="screen = 'settings'"
@@ -350,8 +362,9 @@ async function onRunSaved({ name, score, wave, stats }) {
       <Lobby
         v-if="screen === 'lobby'"
         :selected-id="selected"
-        :cloud="canCloud"
+        :map-pick="mapPick"
         @select="selected = $event"
+        @map-pick="mapPick = $event"
         @launch="launchRun"
         @back="screen = 'menu'"
       />
@@ -371,6 +384,7 @@ async function onRunSaved({ name, score, wave, stats }) {
           :key="runId"
           :character-id="selected"
           :pilot-name="pilotName"
+          :map-id="runMapId"
           :race="race"
           @lobby="onStageLobby"
           @room="onRoomStandings"

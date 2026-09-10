@@ -1,14 +1,15 @@
 import { ref } from 'vue';
 import {
-  equalTo,
-  get,
-  limitToLast,
-  orderByChild,
-  push,
+  addDoc,
+  collection,
+  getDocs,
+  limit,
+  orderBy,
   query,
-  ref as dbRef,
-} from 'firebase/database';
+  where,
+} from 'firebase/firestore';
 import { db } from '../game/firebase.js';
+import { dbUnreachableError, raceTimeout } from './useRoom.js';
 
 const MAX_GLOBAL = 10;
 
@@ -30,14 +31,18 @@ export function useCloudBoard() {
   const error = ref(null);
 
   async function submitScore({ uid, name, score, wave, stats = {} }) {
-    await push(dbRef(db, 'scores'), {
-      uid: uid ?? null,
-      name: String(name || 'Anonymous').slice(0, 20),
-      score: Math.floor(Number(score) || 0),
-      wave: Math.floor(Number(wave) || 1),
-      kills: Math.floor(Number(stats.kills) || 0),
-      timeSec: Math.floor(Number(stats.timeSec) || 0),
-      ts: Date.now(),
+    await raceTimeout(
+      addDoc(collection(db, 'scores'), {
+        uid: uid ?? null,
+        name: String(name || 'Anonymous').slice(0, 20),
+        score: Math.floor(Number(score) || 0),
+        wave: Math.floor(Number(wave) || 1),
+        kills: Math.floor(Number(stats.kills) || 0),
+        timeSec: Math.floor(Number(stats.timeSec) || 0),
+        ts: Date.now(),
+      }),
+    ).catch(() => {
+      throw dbUnreachableError();
     });
   }
 
@@ -45,14 +50,13 @@ export function useCloudBoard() {
     loading.value = true;
     error.value = null;
     try {
-      const q = query(dbRef(db, 'scores'), orderByChild('score'), limitToLast(MAX_GLOBAL));
-      const snap = await get(q);
+      const q = query(collection(db, 'scores'), orderBy('score', 'desc'), limit(MAX_GLOBAL));
+      const snap = await raceTimeout(getDocs(q));
       const rows = [];
-      snap.forEach((child) => {
-        const clean = sanitize(child.val());
+      snap.forEach((d) => {
+        const clean = sanitize(d.data());
         if (clean) rows.push(clean);
       });
-      rows.sort((a, b) => b.score - a.score);
       global.value = rows;
     } catch (e) {
       error.value = e?.message ?? 'Could not load global board.';
@@ -65,11 +69,12 @@ export function useCloudBoard() {
 
   async function personalBest(uid) {
     try {
-      const q = query(dbRef(db, 'scores'), orderByChild('uid'), equalTo(uid), limitToLast(50));
-      const snap = await get(q);
+      // No orderBy here on purpose: where + orderBy needs a composite index.
+      const q = query(collection(db, 'scores'), where('uid', '==', uid), limit(50));
+      const snap = await raceTimeout(getDocs(q));
       let best = 0;
-      snap.forEach((child) => {
-        best = Math.max(best, Number(child.val()?.score) || 0);
+      snap.forEach((d) => {
+        best = Math.max(best, Number(d.data()?.score) || 0);
       });
       return best;
     } catch {

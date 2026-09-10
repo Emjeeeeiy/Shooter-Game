@@ -6,6 +6,7 @@ import {
   BUFFS,
   BUFF_DURATION,
   BOSSES,
+  MAPS,
   CHARACTERS,
   ENEMY_TYPES,
   MAX_PARTICLES,
@@ -59,6 +60,7 @@ export class Game {
 
     this.characterId = 'vanguard';
     this.character = CHARACTERS.vanguard;
+    this.mapId = 'grid';
     this.pilotName = '';
     this.seed = 1;
     this.rngState = 1;
@@ -134,11 +136,12 @@ export class Game {
     this.syncHud();
   }
 
-  start(characterId, seed) {
+  start(characterId, seed, mapId) {
     if (characterId && CHARACTERS[characterId]) {
       this.characterId = characterId;
       this.character = CHARACTERS[characterId];
     }
+    this.setMap(mapId ?? this.mapId);
     this.srand(seed ?? ((Date.now() % 2147483646) + 1));
     this.reset();
     this.running = true;
@@ -173,6 +176,10 @@ export class Game {
 
   dashMax() {
     return this.character?.dashCharges ?? DASH.maxCharges;
+  }
+
+  setMap(id) {
+    if (MAPS[id]) this.mapId = id;
   }
 
   setPilotName(name) {
@@ -269,26 +276,59 @@ export class Game {
   // --- world ----------------------------------------------------------------
 
   generateObstacles() {
-    const safeRadius = 220; // keep the player's spawn point clear
+    const def = MAPS[this.mapId] ?? MAPS.grid;
     const cx = WORLD_WIDTH / 2;
     const cy = WORLD_HEIGHT / 2;
+    const clearOfSpawn = (r, safe) => {
+      const nx = clamp(cx, r.x, r.x + r.width);
+      const ny = clamp(cy, r.y, r.y + r.height);
+      return Math.hypot(cx - nx, cy - ny) >= safe;
+    };
 
     this.obstacles = [];
+    if (def.pattern === 'pillars') {
+      // Symmetric colonnade with open lanes; the arena heart stays open.
+      for (const fx of [0.22, 0.5, 0.78]) {
+        for (const fy of [0.2, 0.5, 0.8]) {
+          if (fx === 0.5 && fy === 0.5) continue;
+          const w = 150 + this.random() * 70;
+          const h = 150 + this.random() * 70;
+          const r = {
+            x: fx * WORLD_WIDTH - w / 2,
+            y: fy * WORLD_HEIGHT - h / 2,
+            width: w,
+            height: h,
+          };
+          if (clearOfSpawn(r, 260)) this.obstacles.push(r);
+        }
+      }
+      return;
+    }
+
+    const count = def.obstacleCount ?? SPAWN.obstacleCount;
+    const safe = def.pattern === 'void' ? 420 : 220;
     let attempts = 0;
-
-    while (this.obstacles.length < SPAWN.obstacleCount && attempts < 200) {
+    while (this.obstacles.length < count && attempts < 300) {
       attempts += 1;
-      const rect = {
-        x: this.random() * (WORLD_WIDTH - 200) + 100,
-        y: this.random() * (WORLD_HEIGHT - 200) + 100,
-        width: this.random() * 100 + 50,
-        height: this.random() * 100 + 50,
-      };
-
-      const nearestX = clamp(cx, rect.x, rect.x + rect.width);
-      const nearestY = clamp(cy, rect.y, rect.y + rect.height);
-      if (Math.hypot(cx - nearestX, cy - nearestY) < safeRadius) continue;
-
+      let rect;
+      if (def.pattern === 'debris') {
+        const s = 30 + this.random() * 40;
+        rect = {
+          x: this.random() * (WORLD_WIDTH - s),
+          y: this.random() * (WORLD_HEIGHT - s),
+          width: s,
+          height: s,
+        };
+      } else {
+        // scatter / void: chunky ruins.
+        rect = {
+          x: this.random() * (WORLD_WIDTH - 200) + 100,
+          y: this.random() * (WORLD_HEIGHT - 200) + 100,
+          width: this.random() * 100 + 50,
+          height: this.random() * 100 + 50,
+        };
+      }
+      if (!clearOfSpawn(rect, safe)) continue;
       this.obstacles.push(rect);
     }
   }
@@ -426,14 +466,18 @@ export class Game {
       return;
     }
     this.dashCharges -= 1;
-    if (this.dashRecharge <= 0) this.dashRecharge = DASH.cooldownTicks;
+    if (this.dashRecharge <= 0) {
+      this.dashRecharge = Math.round(
+        DASH.cooldownTicks * (this.character.dash?.rechargeMult ?? 1),
+      );
+    }
 
     let angle = this.player.angle;
     const mv = this.readMoveInput();
     if (mv.x !== 0 || mv.y !== 0) angle = Math.atan2(mv.y, mv.x);
 
     this.player.isDashing = true;
-    this.player.dashTime = DASH.duration;
+    this.player.dashTime = this.character.dash?.duration ?? DASH.duration;
     this.player.dashAngle = angle;
 
     for (let i = 0; i < DASH.trailCount; i += 1) {
@@ -455,7 +499,10 @@ export class Game {
     this.missileCooldown = this.abilityTotal('missile');
 
     const buffed = this.activeBuff === 'SKILL';
-    const count = buffed ? MISSILE.countBuffed : MISSILE.count;
+    const mc = this.character.missiles ?? {};
+    const baseCount = mc.count ?? MISSILE.count;
+    const count = buffed ? baseCount * 2 : baseCount;
+    const dmg = mc.damage ?? MISSILE.damage;
 
     const targets = [...this.enemies]
       .sort(
@@ -470,7 +517,7 @@ export class Game {
       if (!target && this.enemies.length > 0) target = this.enemies[i % this.enemies.length];
 
       const angle = this.player.angle + (i - (count / 2 - 0.5)) * MISSILE.spread;
-      const speed = buffed ? MISSILE.speedBuffed : MISSILE.speed;
+      const speed = (mc.speed ?? MISSILE.speed) * (buffed ? 1.3 : 1);
 
       this.missiles.push({
         x: this.player.x + Math.cos(angle) * 30,
@@ -481,6 +528,7 @@ export class Game {
         target,
         life: MISSILE.life,
         speed,
+        dmg,
         turnSpeed: buffed ? MISSILE.turnSpeedBuffed : MISSILE.turnSpeed,
       });
     }
@@ -1009,7 +1057,8 @@ export class Game {
       this.dashRecharge -= 1;
       if (this.dashRecharge <= 0) {
         this.dashCharges += 1;
-        this.dashRecharge = this.dashCharges >= this.dashMax() ? 0 : DASH.cooldownTicks;
+        const recharge = Math.round(DASH.cooldownTicks * (this.character.dash?.rechargeMult ?? 1));
+        this.dashRecharge = this.dashCharges >= this.dashMax() ? 0 : recharge;
       }
     }
   }
@@ -1036,22 +1085,28 @@ export class Game {
 
     if (p.isDashing) {
       p.dashTime -= 1;
-      this.movePlayer(Math.cos(p.dashAngle) * DASH.speed, Math.sin(p.dashAngle) * DASH.speed);
+      const dashSpeed = this.character.dash?.speed ?? DASH.speed;
+      this.movePlayer(Math.cos(p.dashAngle) * dashSpeed, Math.sin(p.dashAngle) * dashSpeed);
 
       if (p.dashTime % 2 === 0) this.burst(p.x, p.y, palette.playerDash, 2, 1);
 
       // Dashing is invincible and kills on contact, with a generous hitbox.
+      // Warden hulls mend on every dash kill.
+      const dashHeal = this.character.dash?.healOnKill ?? 0;
       for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
         const e = this.enemies[i];
         if (e.isBoss) {
-          // Dash chips bosses instead of insta-killing.
+          // Dash chips bosses instead of insta-killing (Bull Rush hits harder).
           if (Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius + DASH.killPadding) {
-            this.damageEnemy(i, 4);
+            this.damageEnemy(i, this.character.dash?.bossDmg ?? 4);
           }
           continue;
         }
         if (Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius + DASH.killPadding) {
           this.killEnemy(i);
+          if (dashHeal > 0) {
+            p.health = Math.min(p.maxHealth, p.health + dashHeal);
+          }
         }
       }
 
@@ -1120,7 +1175,14 @@ export class Game {
         const e = this.enemies[j];
         if (Math.hypot(m.x - e.x, m.y - e.y) >= e.radius + m.radius) continue;
 
-        this.damageEnemy(j, MISSILE.damage);
+        this.damageEnemy(j, m.dmg ?? MISSILE.damage);
+        // Siphon missiles mend the hull on every kill.
+        if (!this.enemies.includes(e)) {
+          const siphon = this.character.missiles?.siphon ?? 0;
+          if (siphon > 0) {
+            this.player.health = Math.min(this.player.maxHealth, this.player.health + siphon);
+          }
+        }
         this.burst(m.x, m.y, palette.missile, 10, 6);
         hit = true;
         break;
@@ -1420,7 +1482,8 @@ export class Game {
     hud.dashing = this.player.isDashing;
     hud.dashCharges = this.dashCharges;
     hud.dashMax = this.dashMax();
-    hud.dashRecharge = this.dashRecharge > 0 ? 1 - this.dashRecharge / DASH.cooldownTicks : 0;
+    const dashTotal = Math.round(DASH.cooldownTicks * (this.character.dash?.rechargeMult ?? 1));
+    hud.dashRecharge = this.dashRecharge > 0 ? 1 - this.dashRecharge / dashTotal : 0;
     hud.missileCooldown = this.cooldownFraction(this.missileCooldown, this.abilityTotal('missile'));
     hud.shockCooldown = this.cooldownFraction(this.shockCooldown, this.abilityTotal('shock'));
     hud.multiplier = this.multiplier;

@@ -8,6 +8,13 @@ export default defineConfig({
   build: {
     sourcemap: true,
     chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore', 'firebase/analytics'],
+        },
+      },
+    },
   },
   test: {
     environment: 'node',

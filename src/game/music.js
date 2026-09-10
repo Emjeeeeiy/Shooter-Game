@@ -16,6 +16,8 @@ let mood = null;
 let muted = false;
 let enabled = true;
 let volume = 0.7;
+let gestureSeen = false;
+let pendingMood = null;
 const MUSIC_LEVEL = 0.42;
 
 const midi = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -151,7 +153,7 @@ function schedule(s, t) {
 }
 
 function tick() {
-  if (!ctx || !mood) return;
+  if (!ctx || !mood || ctx.state !== 'running') return;
   while (nextTime < ctx.currentTime + 0.25) {
     schedule(step, nextTime);
     nextTime += STEP16(mood);
@@ -161,10 +163,14 @@ function tick() {
 
 export const music = {
   unlock() {
-    if (ensure()) applyGain();
+    gestureSeen = true;
+    if (pendingMood) playMood(pendingMood);
+    else if (ensure()) applyGain();
   },
   playMood(m) {
     if (m !== 'menu' && m !== 'game') m = null;
+    pendingMood = m;
+    if (!gestureSeen) return; // browsers block audio before first interaction
     if (!ensure()) return;
     if (mood !== m) {
       mood = m;

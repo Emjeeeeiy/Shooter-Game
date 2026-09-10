@@ -1,11 +1,12 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { CHARACTER_LIST } from '../game/constants.js';
+import { CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
 import {
   backToRoomLobby,
   createRoom,
   joinRoom,
   leaveRoom,
+  setRoomMap,
   setRoomMode,
   setRoomShip,
   showResults,
@@ -72,6 +73,23 @@ const members = computed(() => {
 
 const isHost = computed(() => room.value?.host === props.uid);
 const me = computed(() => members.value.find((m) => m.id === props.uid));
+
+// Adopt the room's stored ship when (re)joining so the picker stays in sync.
+watch(me, (m) => {
+  if (m?.ship && m.ship !== ship.value) ship.value = m.ship;
+});
+
+function shipDef(id) {
+  return CHARACTER_LIST.find((c) => c.id === id) ?? CHARACTER_LIST[0];
+}
+
+const shownMap = computed(() => {
+  const id =
+    room.value?.status === 'playing'
+      ? (room.value?.map ?? 'grid')
+      : (room.value?.mapPick ?? 'grid');
+  return MAP_PICKS.find((m) => m.id === id) ?? MAP_PICKS[0];
+});
 const allDone = computed(() => {
   const live = room.value?.live ?? {};
   const ids = Object.keys(room.value?.members ?? {});
@@ -189,21 +207,6 @@ function copyCode() {
       </p>
 
       <div class="panel mt-6 w-full p-6">
-        <div class="label">Your ship</div>
-        <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          <button
-            v-for="c in CHARACTER_LIST"
-            :key="c.id"
-            type="button"
-            class="rounded-lg border px-2 py-2 text-[12px] font-medium transition-all"
-            :class="ship === c.id ? 'border-accent bg-accent/10 text-zinc-100' : 'border-white/10 text-zinc-500 hover:border-white/25'"
-            @click="ship = c.id"
-          >
-            <span class="mx-auto mb-1 block h-2 w-2 rounded-full" :style="{ background: c.color }" />
-            {{ c.name }}
-          </button>
-        </div>
-
         <button
           type="button"
           :disabled="busy"
@@ -309,7 +312,7 @@ function copyCode() {
               {{ m.name }}{{ m.id === uid ? ' (you)' : '' }}
             </span>
             <span v-if="m.id === room?.host" class="rounded bg-skill/15 px-1.5 py-0.5 text-[10px] font-bold text-skill">HOST</span>
-            <span class="ml-auto text-[11px] text-zinc-500">{{ m.ship ?? 'vanguard' }}</span>
+            <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-zinc-500"><span class="h-2 w-2 rounded-full" :style="{ background: shipDef(m.ship).color }" />{{ shipDef(m.ship).name }}</span>
             <span
               class="rounded-full px-2 py-0.5 text-[10px] font-bold"
               :class="m.ready ? 'bg-shock/15 text-shock' : 'bg-white/5 text-zinc-500'"
@@ -338,6 +341,46 @@ function copyCode() {
               <span v-else class="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
             </li>
           </ul>
+        </div>
+
+        <div class="mt-4">
+          <div class="label">Your ship</div>
+          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            <button
+              v-for="c in CHARACTER_LIST"
+              :key="c.id"
+              type="button"
+              class="rounded-lg border px-2 py-2 text-[12px] font-medium transition-all"
+              :class="ship === c.id ? 'border-accent bg-accent/10 text-zinc-100' : 'border-white/10 text-zinc-500 hover:border-white/25'"
+              @click="ship = c.id"
+            >
+              <span class="mx-auto mb-1 block h-2 w-2 rounded-full" :style="{ background: c.color }" />
+              {{ c.name }}
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <div class="label">Arena map</div>
+          <div
+            v-if="isHost && room?.status === 'lobby'"
+            class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3"
+          >
+            <button
+              v-for="mp in MAP_PICKS"
+              :key="mp.id"
+              type="button"
+              class="rounded-lg border px-2 py-2 text-left transition-all"
+              :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
+              @click="setRoomMap(code, mp.id)"
+            >
+              <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
+              <div class="text-[11px] text-zinc-500">{{ mp.desc }}</div>
+            </button>
+          </div>
+          <p v-else class="mt-1.5 text-[13px] text-zinc-300">
+            {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
+          </p>
         </div>
 
         <div v-if="room?.status === 'lobby'" class="mt-4 flex gap-2">

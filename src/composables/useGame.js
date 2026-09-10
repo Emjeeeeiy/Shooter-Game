@@ -259,11 +259,11 @@ export function useGame(settings) {
 
   // --- public actions -------------------------------------------------------
 
-  const start = (characterId, seed) => {
+  const start = (characterId, seed, mapId) => {
     sfx.unlock();
     applyAudioSettings();
     sfx.play('click');
-    game.value?.start(characterId, seed);
+    game.value?.start(characterId, seed, mapId);
   };
   const setCharacter = (id) => game.value?.setCharacter(id);
   const setPilotName = (name) => game.value?.setPilotName(name);

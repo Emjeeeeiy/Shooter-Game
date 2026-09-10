@@ -1,12 +1,26 @@
 import { ref } from 'vue';
-import { off, onDisconnect, onValue, push, ref as dbRef, remove, set } from 'firebase/database';
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  limit,
+  onSnapshot,
+  orderBy,
+  query,
+  setDoc,
+} from 'firebase/firestore';
 import { db } from '../game/firebase.js';
 import { dbUnreachableError, raceTimeout } from './useRoom.js';
 
 const STALE_MS = 90000;
 const HEARTBEAT_MS = 30000;
 
-/** Online pilots + room invites over RTDB. */
+/**
+ * Online pilots + room invites over Firestore.
+ * Note: Firestore has no onDisconnect hook, so presence is a heartbeat with
+ * client-side staleness filtering — abrupt disconnects linger up to ~90s.
+ */
 export function usePresence() {
   const online = ref([]);
   let stopBeat = null;
@@ -14,15 +28,12 @@ export function usePresence() {
   function goOnline(uid, name) {
     if (!uid) return;
     if (stopBeat) clearInterval(stopBeat);
-    const target = dbRef(db, `status/${uid}`);
     const mark = () =>
-      set(target, { name: String(name).slice(0, 20), lastSeen: Date.now() }).catch(() => {});
+      setDoc(doc(db, 'status', uid), {
+        name: String(name).slice(0, 20),
+        lastSeen: Date.now(),
+      }).catch(() => {});
     mark();
-    try {
-      onDisconnect(target).remove().catch(() => {});
-    } catch {
-      // unsupported here — stale entries expire client-side via lastSeen
-    }
     stopBeat = setInterval(mark, HEARTBEAT_MS);
   }
 
@@ -31,30 +42,34 @@ export function usePresence() {
       clearInterval(stopBeat);
       stopBeat = null;
     }
-    if (uid) remove(dbRef(db, `status/${uid}`)).catch(() => {});
+    if (uid) deleteDoc(doc(db, 'status', uid)).catch(() => {});
   }
 
   function subscribe() {
-    const target = dbRef(db, 'status');
-    const handler = (snap) => {
-      const now = Date.now();
-      const list = [];
-      snap.forEach((child) => {
-        const v = child.val() ?? {};
-        if (now - (Number(v.lastSeen) || 0) < STALE_MS) {
-          list.push({ uid: child.key, name: String(v.name ?? 'Pilot') });
-        }
-      });
-      list.sort((a, b) => a.name.localeCompare(b.name));
-      online.value = list;
-    };
-    onValue(target, handler);
-    return () => off(target, 'value', handler);
+    const unsub = onSnapshot(
+      query(collection(db, 'status')),
+      (snap) => {
+        const now = Date.now();
+        const list = [];
+        snap.forEach((d) => {
+          const v = d.data() ?? {};
+          if (now - (Number(v.lastSeen) || 0) < STALE_MS) {
+            list.push({ uid: d.id, name: String(v.name ?? 'Pilot') });
+          }
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        online.value = list;
+      },
+      () => {
+        // Listen errors ignored; writes surface actionable errors.
+      },
+    );
+    return unsub;
   }
 
   async function sendInvite(toUid, { fromUid, fromName, roomCode, mode }) {
     await raceTimeout(
-      push(dbRef(db, `invites/${toUid}`), {
+      addDoc(collection(db, 'invites', toUid, 'items'), {
         fromUid,
         fromName: String(fromName).slice(0, 20),
         roomCode: String(roomCode).toUpperCase(),
@@ -72,30 +87,36 @@ export function usePresence() {
 /** Incoming room invites for one user. */
 export function useInvites() {
   const invites = ref([]);
-  let target = null;
-  let handler = null;
+  let unsub = null;
 
   function watchUid(uid) {
-    if (target && handler) off(target, 'value', handler);
-    target = null;
-    handler = null;
+    if (unsub) unsub();
+    unsub = null;
     invites.value = [];
     if (!uid) return;
-    target = dbRef(db, `invites/${uid}`);
-    handler = (snap) => {
-      const list = [];
-      snap.forEach((child) => {
-        const v = child.val() ?? {};
-        if (v.roomCode) list.push({ id: child.key, ...v });
-      });
-      list.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-      invites.value = list.slice(0, 3);
-    };
-    onValue(target, handler);
+    const q = query(
+      collection(db, 'invites', uid, 'items'),
+      orderBy('ts', 'desc'),
+      limit(3),
+    );
+    unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = [];
+        snap.forEach((d) => {
+          const v = d.data() ?? {};
+          if (v.roomCode) list.push({ id: d.id, ...v });
+        });
+        invites.value = list;
+      },
+      () => {
+        invites.value = [];
+      },
+    );
   }
 
   async function dismiss(uid, id) {
-    await remove(dbRef(db, `invites/${uid}/${id}`));
+    await deleteDoc(doc(db, 'invites', uid, 'items', id));
   }
 
   return { invites, watchUid, dismiss };

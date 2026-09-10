@@ -18,21 +18,19 @@ npm run preview  # preview production build
 npm test         # vitest unit tests
 ```
 
-## Firebase setup (auth + realtime database)
+## Firebase setup (auth + Firestore)
 
-The app uses Firebase Authentication (email/password) and Realtime Database
-(global scores, multiplayer race rooms). One-time console setup:
+The app uses Firebase Authentication (email/password) and Cloud Firestore
+(global scores, multiplayer race rooms, presence, invites). No database URL
+is needed — Firestore resolves from the project id. One-time console setup:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/) → project
    `shooter-game-cf98f` (config lives in `src/game/firebase.js`).
 2. **Authentication → Sign-in method** → enable **Email/Password**.
-3. **Realtime Database → Create database** (locked mode is fine).
-4. **Realtime Database → Rules** → paste the contents of
-   `database.rules.json` from this repo → Publish.
-5. If your database URL is not
-   `https://shooter-game-cf98f-default-rtdb.firebaseio.com`
-   (e.g. a regional instance), update `databaseURL` in
-   `src/game/firebase.js` to match.
+3. **Firestore Database → Create database** → Start in **production mode**,
+   pick any location → Enable.
+4. **Firestore Database → Rules** → paste the contents of
+   `firestore.rules` from this repo → Publish.
 
 Flow: login/register (or Continue offline) → menu
 (Single player / Multiplayer race / Settings) → ship hangar → arena.
@@ -43,8 +41,10 @@ Database layout:
 
 ```
 users/{uid}  = { name, email, createdAt, gamesPlayed, bestScore }
-scores/      = push { uid, name, score, wave, kills, timeSec, ts }
+scores/…     = { uid, name, score, wave, kills, timeSec, ts }
 rooms/{CODE} = { host, status, members: {uid: {name, ready, ship}}, live: {...} }
+status/{uid} = { name, lastSeen }  (presence heartbeats)
+invites/{uid}/items/… = { fromUid, fromName, roomCode, mode, ts }
 ```
 
 ## Controls
@@ -109,8 +109,8 @@ All gameplay numbers live in `src/game/constants.js` (`player, bullet, energy, d
 * PWA manifest at `public/manifest.webmanifest`.
 * CI: `.github/workflows/ci.yml` runs `npm test` + `npm run build`.
 * Scores stored locally (`neonStrike_leaderboard_v2`, top 10) + global top 10
-  in RTDB (`scores`) for signed-in players.
-* RTDB security rules ship as `database.rules.json` — paste into the console.
+  in Firestore (`scores`) for signed-in players.
+* Firestore security rules ship as `firestore.rules` — paste into the console.
 
 ## Roadmap
 

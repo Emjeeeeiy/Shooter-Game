@@ -28,6 +28,8 @@ const tips = [
   'Every 10 waves the threat tier rises: faster, tougher, new breeds.',
   'A boss lands every 20 waves — Dreadnought, Star-Wyrm, Hydra, Carrier.',
   'Green crosses heal, bolts restore energy, violet orbs grant Magnet.',
+  'Multiplayer lobbies choose ship, map and mode before deploy.',
+  'Each hull dashes and shoots differently — check the hangar.',
 ];
 </script>
 

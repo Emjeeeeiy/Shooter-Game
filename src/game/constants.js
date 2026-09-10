@@ -290,6 +290,46 @@ export const BOSSES = [
   },
 ];
 
+// Arena maps for multiplayer lobbies (plus single-player default 'grid').
+// Patterns drive obstacle generation; counts are per-map.
+export const MAPS = {
+  grid: {
+    id: 'grid',
+    name: 'Neon Grid',
+    desc: 'Classic scattered ruins',
+    obstacleCount: 26,
+    pattern: 'scatter',
+  },
+  debris: {
+    id: 'debris',
+    name: 'Debris Field',
+    desc: 'Dense small wreckage',
+    obstacleCount: 46,
+    pattern: 'debris',
+  },
+  pillars: {
+    id: 'pillars',
+    name: 'Pillars',
+    desc: 'Symmetric cover lanes',
+    obstacleCount: 12,
+    pattern: 'pillars',
+  },
+  void: {
+    id: 'void',
+    name: 'Open Void',
+    desc: 'Almost no cover',
+    obstacleCount: 4,
+    pattern: 'void',
+  },
+};
+
+export const MAP_LIST = Object.values(MAPS);
+
+export const MAP_PICKS = [
+  ...MAP_LIST,
+  { id: 'random', name: 'Random', desc: 'A different arena every match' },
+];
+
 // Playable ships picked in the pre-game lobby. The engine reads these at
 // reset() so every run uses the selected hull's stats.
 export const CHARACTERS = {
@@ -312,6 +352,9 @@ export const CHARACTERS = {
     ultimate: { id: 'shock', name: 'Shockwave', desc: 'Heavy radial damage + knockback', cooldownTicks: 900 },
     scoreMult: 1.15,
     comboWindowMult: 1.25,
+    dash: { speed: 25, duration: 8, rechargeMult: 0.85, bossDmg: 4 },
+    missiles: { count: 10, damage: 3, speed: 10 },
+    kit: 'Seeker swarm · Quick dash · Shockwave',
   },
   spectre: {
     id: 'spectre',
@@ -331,6 +374,9 @@ export const CHARACTERS = {
     passive: { name: 'Executioner', desc: 'Double damage vs enemies under 25% HP' },
     ultimate: { id: 'rift', name: 'Void Rift', desc: 'Blast that slows all enemies', cooldownTicks: 600 },
     executeThreshold: 0.25,
+    dash: { speed: 28, duration: 10, rechargeMult: 1, bossDmg: 4 },
+    missiles: { count: 6, damage: 4, speed: 13 },
+    kit: 'Needle volley · Phase Step · Void Rift',
   },
   juggernaut: {
     id: 'juggernaut',
@@ -350,6 +396,9 @@ export const CHARACTERS = {
     passive: { name: 'Heavy Plating', desc: 'Takes 30% less damage' },
     ultimate: { id: 'slam', name: 'Siege Slam', desc: 'Devastating close-range blast', cooldownTicks: 1080 },
     damageTakenMult: 0.7,
+    dash: { speed: 22, duration: 8, rechargeMult: 1.15, bossDmg: 10 },
+    missiles: { count: 14, damage: 5, speed: 8 },
+    kit: 'Siege rockets · Bull Rush · Siege Slam',
   },
   warden: {
     id: 'warden',
@@ -369,6 +418,9 @@ export const CHARACTERS = {
     passive: { name: 'Field Medic', desc: 'Pickups 50% stronger' },
     ultimate: { id: 'restore', name: 'Restoration', desc: 'Heal + energy, burns nearby foes', cooldownTicks: 840 },
     pickupMult: 1.5,
+    dash: { speed: 25, duration: 8, rechargeMult: 1, bossDmg: 4, healOnKill: 4 },
+    missiles: { count: 8, damage: 3, speed: 10, siphon: 2 },
+    kit: 'Siphon missiles · Mend dash · Restoration',
   },
 };
 

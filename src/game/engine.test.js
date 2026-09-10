@@ -290,4 +290,97 @@ describe('ship passives', () => {
   });
 });
 
+describe('arena maps', () => {
+  it('generates the expected obstacle layouts', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('vanguard', 7, 'pillars');
+    expect(g.mapId).toBe('pillars');
+    expect(g.obstacles.length).toBe(8);
+    g.start('vanguard', 7, 'debris');
+    expect(g.mapId).toBe('debris');
+    expect(g.obstacles.length).toBe(46);
+    g.start('vanguard', 7, 'void');
+    expect(g.mapId).toBe('void');
+    expect(g.obstacles.length).toBe(4);
+  });
+
+  it('ignores unknown map ids and keeps spawn clear', () => {
+    const { g } = makeGame();
+    expect(g.mapId).toBe('grid');
+    g.setMap('nope');
+    expect(g.mapId).toBe('grid');
+    const cx = 1800;
+    const cy = 1200;
+    for (const o of g.obstacles) {
+      const nx = Math.max(o.x, Math.min(cx, o.x + o.width));
+      const ny = Math.max(o.y, Math.min(cy, o.y + o.height));
+      expect(Math.hypot(cx - nx, cy - ny)).toBeGreaterThanOrEqual(200);
+    }
+  });
+});
+
+describe('ship kits', () => {
+  it('fires per-ship missile volleys', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre', 11);
+    g.fireMissiles();
+    expect(g.missiles.length).toBe(6);
+    expect(g.missiles[0].dmg).toBe(4);
+    g.start('juggernaut', 11);
+    g.fireMissiles();
+    expect(g.missiles.length).toBe(14);
+    expect(g.missiles[0].dmg).toBe(5);
+  });
+
+  it('spectre phase-steps longer', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre', 11);
+    g.dash();
+    expect(g.player.dashTime).toBe(10);
+  });
+
+  it('juggernaut bull rush chips bosses harder', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('juggernaut', 11);
+    g.spawnBoss(); // dreadnought, 34 hp
+    const boss = g.enemies.find((e) => e.isBoss);
+    boss.x = g.player.x + 40;
+    boss.y = g.player.y;
+    g.dash();
+    g.update();
+    expect(boss.health).toBe(24);
+  });
+
+  it('warden siphons hull from missile kills', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('warden', 11);
+    g.obstacles = [];
+    g.player.health = 50;
+    g.enemies.push(minEnemy(g.player.x + 120, g.player.y, 1));
+    g.fireMissiles();
+    for (let t = 0; t < 40 && g.enemies.length > 0; t += 1) g.updateMissiles();
+    expect(g.enemies.length).toBe(0);
+    expect(g.player.health).toBe(52);
+  });
+
+  it('warden mend-dash heals on contact kills', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('warden', 11);
+    g.player.health = 50;
+    g.enemies.push(minEnemy(g.player.x + 30, g.player.y, 1));
+    g.dash();
+    for (let t = 0; t < 3; t += 1) {
+      g.update();
+      g.pickups.length = 0; // ignore random drops for an exact assertion
+    }
+    expect(g.player.health).toBe(54);
+  });
+});
+
 export { MISSILE, SHOCK };

@@ -6,7 +6,7 @@ import {
   signOut as fbSignOut,
   updateProfile,
 } from 'firebase/auth';
-import { ref as dbRef, set } from 'firebase/database';
+import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../game/firebase.js';
 
 const user = ref(null);
@@ -49,7 +49,7 @@ export function useAuth() {
     const name = (pilotName || 'Pilot').slice(0, 20);
     try {
       await updateProfile(cred.user, { displayName: name });
-      await set(dbRef(db, `users/${cred.user.uid}`), {
+      await setDoc(doc(db, 'users', cred.user.uid), {
         name,
         email: email.trim(),
         createdAt: Date.now(),
@@ -77,7 +77,7 @@ export function useAuth() {
     const clean = String(name).trim().slice(0, 20) || 'Pilot';
     await updateProfile(u, { displayName: clean });
     try {
-      await set(dbRef(db, `users/${u.uid}/name`), clean);
+      await setDoc(doc(db, 'users', u.uid), { name: clean }, { merge: true });
     } catch {
       // RTDB write failed — Auth profile still updated.
     }

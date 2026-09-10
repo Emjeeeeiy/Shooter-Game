@@ -1,17 +1,18 @@
 import { onBeforeUnmount, ref, watch } from 'vue';
 import {
-  get,
-  off,
-  onDisconnect,
-  onValue,
-  ref as dbRef,
-  remove,
-  set,
-  update,
-} from 'firebase/database';
-import { db, databaseURL } from '../game/firebase.js';
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  increment,
+  onSnapshot,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
+import { db } from '../game/firebase.js';
 
 const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const DB_TIMEOUT_MS = 10000;
 
 export function genCode() {
   let code = '';
@@ -19,11 +20,9 @@ export function genCode() {
   return code;
 }
 
-function roomPath(code) {
-  return `rooms/${String(code).toUpperCase()}`;
+function roomRef(code) {
+  return doc(db, 'rooms', String(code).toUpperCase());
 }
-
-const DB_TIMEOUT_MS = 10000;
 
 function timeout(ms) {
   return new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
@@ -35,26 +34,19 @@ export function raceTimeout(promise, ms = DB_TIMEOUT_MS) {
 
 export function dbUnreachableError() {
   return new Error(
-    'Cannot reach the Realtime Database. In Firebase Console: 1) create the database, ' +
-      '2) publish database.rules.json. ' +
-      `The app is trying: ${databaseURL}`,
+    'Cannot reach Firestore. In Firebase Console: 1) create a Firestore database (native mode), ' +
+      '2) publish firestore.rules from this repo.',
   );
 }
 
-/** Fail fast with a helpful error instead of hanging forever. */
-export async function ensureOnline() {
+/** Rejects with the unreachable error only on timeout; real errors pass through. */
+async function timed(promise) {
   try {
-    const snap = await raceTimeout(get(dbRef(db, '.info/connected')));
-    if (snap.val() === true) return;
-  } catch {
-    // fall through to unreachable error
+    return await raceTimeout(promise);
+  } catch (e) {
+    if (e?.message === 'timeout') throw dbUnreachableError();
+    throw e;
   }
-  throw dbUnreachableError();
-}
-
-/** Capped fire-and-forget so presence cleanup never blocks the UI. */
-function bestEffort(promise) {
-  return raceTimeout(promise, 5000).catch(() => {});
 }
 
 function cleanRoom(raw) {
@@ -64,6 +56,10 @@ function cleanRoom(raw) {
     host: raw.host ?? null,
     status: raw.status ?? 'lobby',
     mode: raw.mode === 'versus' ? 'versus' : 'arcade',
+    mapPick: ['grid', 'debris', 'pillars', 'void', 'random'].includes(raw.mapPick)
+      ? raw.mapPick
+      : 'grid',
+    map: ['grid', 'debris', 'pillars', 'void'].includes(raw.map) ? raw.map : 'grid',
     seed: Number(raw.seed) || null,
     createdAt: Number(raw.createdAt) || 0,
     members: raw.members && typeof raw.members === 'object' ? raw.members : {},
@@ -72,141 +68,163 @@ function cleanRoom(raw) {
 }
 
 export async function createRoom(uid, name, ship, mode = 'arcade') {
-  await ensureOnline();
   const code = genCode();
-  const path = roomPath(code);
-  const exists = await raceTimeout(get(dbRef(db, path))).catch(() => {
-    throw dbUnreachableError();
-  });
+  const ref = roomRef(code);
+  const exists = await timed(getDoc(ref));
   if (exists.exists()) return createRoom(uid, name, ship, mode); // collision — retry
-  const member = { name: name.slice(0, 20), ready: false, ship, joinedAt: Date.now() };
-  await raceTimeout(
-    update(dbRef(db, path), {
+  await timed(
+    setDoc(ref, {
       code,
       host: uid,
       status: 'lobby',
       mode: mode === 'versus' ? 'versus' : 'arcade',
+      mapPick: 'grid',
+      map: 'grid',
       createdAt: Date.now(),
-      [`members/${uid}`]: member,
+      members: {
+        [uid]: { name: name.slice(0, 20), ready: false, ship, joinedAt: Date.now() },
+      },
+      live: {},
     }),
-  ).catch(() => {
-    throw dbUnreachableError();
-  });
-  await bestEffort(onDisconnect(dbRef(db, `${path}/members/${uid}`)).remove());
+  );
   return code;
 }
 
 export async function joinRoom(code, uid, name, ship) {
-  await ensureOnline();
-  const path = roomPath(code);
-  const snap = await raceTimeout(get(dbRef(db, path))).catch(() => {
-    throw dbUnreachableError();
-  });
+  const ref = roomRef(code);
+  const snap = await timed(getDoc(ref));
   if (!snap.exists()) throw new Error('Room not found. Check the code.');
-  const room = cleanRoom(snap.val());
+  const room = cleanRoom(snap.data());
   const isMember = !!room.members[uid];
   if (room.status !== 'lobby' && !isMember) throw new Error('That match already started.');
   if (!isMember) {
-    await update(dbRef(db, path), {
-      [`members/${uid}`]: { name: name.slice(0, 20), ready: false, ship, joinedAt: Date.now() },
-    });
-    await bestEffort(onDisconnect(dbRef(db, `${path}/members/${uid}`)).remove());
+    await timed(
+      updateDoc(ref, {
+        [`members.${uid}`]: {
+          name: name.slice(0, 20),
+          ready: false,
+          ship,
+          joinedAt: Date.now(),
+        },
+      }),
+    );
   } else {
-    await update(dbRef(db, path), { [`members/${uid}/ship`]: ship });
+    await timed(updateDoc(ref, { [`members.${uid}.ship`]: ship }));
   }
   return room.code;
 }
 
 export async function leaveRoom(code, uid) {
-  const path = roomPath(code);
-  await remove(dbRef(db, `${path}/members/${uid}`));
-  await remove(dbRef(db, `${path}/live/${uid}`));
-  await bestEffort(onDisconnect(dbRef(db, `${path}/members/${uid}`)).cancel());
-  const snap = await get(dbRef(db, path));
+  const ref = roomRef(code);
+  await timed(
+    updateDoc(ref, {
+      [`members.${uid}`]: deleteField(),
+      [`live.${uid}`]: deleteField(),
+    }),
+  );
+  const snap = await timed(getDoc(ref));
   if (!snap.exists()) return;
-  const room = cleanRoom(snap.val());
+  const room = cleanRoom(snap.data());
   const ids = Object.keys(room.members);
   if (ids.length === 0) {
-    await remove(dbRef(db, path));
+    await timed(deleteDoc(ref));
     return;
   }
   if (room.host === uid || !room.members[room.host]) {
-    await update(dbRef(db, path), { host: ids[0] });
+    await timed(updateDoc(ref, { host: ids[0] }));
   }
 }
 
 export async function toggleReady(code, uid, ready) {
-  await update(dbRef(db, roomPath(code)), { [`members/${uid}/ready`]: !!ready });
+  await timed(updateDoc(roomRef(code), { [`members.${uid}.ready`]: !!ready }));
 }
 
 export async function setRoomShip(code, uid, ship) {
-  await update(dbRef(db, roomPath(code)), { [`members/${uid}/ship`]: ship });
+  await timed(updateDoc(roomRef(code), { [`members.${uid}.ship`]: ship }));
 }
 
-export async function startMatch(code) {
-  // Reset live board, keep members. Ready flags clear for the next round.
-  // A shared seed gives every pilot the identical battlefield.
-  const snap = await get(dbRef(db, `${roomPath(code)}/members`));
-  const members = snap.exists() ? snap.val() : {};
-  const reset = {
-    status: 'playing',
-    seed: Math.floor(Math.random() * 2147483646) + 1,
-  };
-  for (const id of Object.keys(members)) {
-    reset[`live/${id}`] = {
-      name: members[id]?.name ?? 'Pilot',
-      score: 0,
-      wave: 1,
-      done: false,
-    };
-    reset[`members/${id}/ready`] = false;
-  }
-  await update(dbRef(db, roomPath(code)), reset);
-}
+const MAP_IDS = ['grid', 'debris', 'pillars', 'void'];
 
 export async function setRoomMode(code, mode) {
-  await update(dbRef(db, roomPath(code)), {
-    mode: mode === 'versus' ? 'versus' : 'arcade',
-  });
+  await timed(
+    updateDoc(roomRef(code), { mode: mode === 'versus' ? 'versus' : 'arcade' }),
+  );
 }
 
 export async function getRoom(code) {
-  const snap = await get(dbRef(db, roomPath(code)));
-  return snap.exists() ? cleanRoom(snap.val()) : null;
+  const snap = await timed(getDoc(roomRef(code)));
+  return snap.exists() ? cleanRoom(snap.data()) : null;
 }
 
-/** Increment a per-player live counter (versus `incoming`, arcade `gift`). */
+/** Atomic increment — no read needed (versus `incoming`, arcade `gift`). */
 export async function bumpCounter(code, uid, field) {
-  const target = dbRef(db, `${roomPath(code)}/live/${uid}/${field}`);
-  const snap = await get(target);
-  await set(target, (Number(snap.val()) || 0) + 1);
+  await updateDoc(roomRef(code), { [`live.${uid}.${field}`]: increment(1) }).catch(() => {});
+}
+
+export async function setRoomMap(code, mapPick) {
+  const pick = ['grid', 'debris', 'pillars', 'void', 'random'].includes(mapPick) ? mapPick : 'grid';
+  await timed(updateDoc(roomRef(code), { mapPick: pick }));
+}
+
+export async function startMatch(code) {
+  const ref = roomRef(code);
+  const snap = await timed(getDoc(ref));
+  const data = snap.exists() ? snap.data() : {};
+  const members = data.members ?? {};
+  let pick = data.mapPick ?? 'grid';
+  if (pick === 'random' || !MAP_IDS.includes(pick)) {
+    pick = MAP_IDS[Math.floor(Math.random() * MAP_IDS.length)];
+  }
+  const live = {};
+  for (const id of Object.keys(members)) {
+    live[id] = { name: members[id]?.name ?? 'Pilot', score: 0, wave: 1, done: false };
+  }
+  await timed(
+    setDoc(
+      ref,
+      {
+        status: 'playing',
+        seed: Math.floor(Math.random() * 2147483646) + 1,
+        map: pick,
+        live,
+      },
+      { merge: true },
+    ),
+  );
+  const readyReset = {};
+  for (const id of Object.keys(members)) readyReset[`members.${id}.ready`] = false;
+  if (Object.keys(readyReset).length) await timed(updateDoc(ref, readyReset));
 }
 
 export async function showResults(code) {
-  await update(dbRef(db, roomPath(code)), { status: 'done' });
+  await timed(updateDoc(roomRef(code), { status: 'done' }));
 }
 
 export async function backToRoomLobby(code) {
-  await update(dbRef(db, roomPath(code)), { status: 'lobby', live: null });
+  await timed(updateDoc(roomRef(code), { status: 'lobby', live: {} }));
 }
 
 export async function updateLiveScore(code, uid, { score, wave, name }) {
-  await update(dbRef(db, `${roomPath(code)}/live/${uid}`), {
-    score: Math.floor(Number(score) || 0),
-    wave: Math.floor(Number(wave) || 1),
-    ...(name ? { name: String(name).slice(0, 20) } : {}),
-  });
+  const fields = {
+    [`live.${uid}.score`]: Math.floor(Number(score) || 0),
+    [`live.${uid}.wave`]: Math.floor(Number(wave) || 1),
+  };
+  if (name) fields[`live.${uid}.name`] = String(name).slice(0, 20);
+  // Best-effort: the caller already throttles + swallows errors.
+  await updateDoc(roomRef(code), fields).catch(() => {});
 }
 
 export async function submitFinal(code, uid, { score, wave, name }) {
-  await update(dbRef(db, `${roomPath(code)}/live/${uid}`), {
-    score: Math.floor(Number(score) || 0),
-    wave: Math.floor(Number(wave) || 1),
-    done: true,
-    finalScore: Math.floor(Number(score) || 0),
-    finalWave: Math.floor(Number(wave) || 1),
-    ...(name ? { name: String(name).slice(0, 20) } : {}),
-  });
+  await timed(
+    updateDoc(roomRef(code), {
+      [`live.${uid}.score`]: Math.floor(Number(score) || 0),
+      [`live.${uid}.wave`]: Math.floor(Number(wave) || 1),
+      [`live.${uid}.done`]: true,
+      [`live.${uid}.finalScore`]: Math.floor(Number(score) || 0),
+      [`live.${uid}.finalWave`]: Math.floor(Number(wave) || 1),
+      ...(name ? { [`live.${uid}.name`]: String(name).slice(0, 20) } : {}),
+    }),
+  );
 }
 
 /**
@@ -216,13 +234,11 @@ export async function submitFinal(code, uid, { score, wave, name }) {
 export function useRoom(codeSource) {
   const room = ref(null);
   const missing = ref(false);
-  let target = null;
-  let handler = null;
+  let unsub = null;
 
   const stop = () => {
-    if (target && handler) off(target, 'value', handler);
-    target = null;
-    handler = null;
+    if (unsub) unsub();
+    unsub = null;
   };
 
   const sub = (code) => {
@@ -230,17 +246,21 @@ export function useRoom(codeSource) {
     room.value = null;
     missing.value = false;
     if (!code) return;
-    target = dbRef(db, roomPath(code));
-    handler = (snap) => {
-      if (!snap.exists()) {
-        room.value = null;
-        missing.value = true;
-        return;
-      }
-      missing.value = false;
-      room.value = cleanRoom(snap.val());
-    };
-    onValue(target, handler);
+    unsub = onSnapshot(
+      roomRef(code),
+      (snap) => {
+        if (!snap.exists()) {
+          room.value = null;
+          missing.value = true;
+          return;
+        }
+        missing.value = false;
+        room.value = cleanRoom(snap.data());
+      },
+      () => {
+        // Listen errors ignored here; writes surface actionable errors.
+      },
+    );
   };
 
   watch(codeSource, sub, { immediate: true });

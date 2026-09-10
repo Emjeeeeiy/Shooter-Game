@@ -20,7 +20,8 @@ import TouchControls from './TouchControls.vue';
 const props = defineProps({
   characterId: { type: String, default: 'vanguard' },
   pilotName: { type: String, default: 'Pilot' },
-  race: { type: Object, default: null }, // { code, uid, name, seed, mode }
+  mapId: { type: String, default: 'grid' },
+  race: { type: Object, default: null }, // { code, uid, name, seed, mode, mapId }
 });
 const emit = defineEmits(['lobby', 'race-finish', 'room', 'run-saved']);
 
@@ -63,6 +64,8 @@ function onSave(name) {
 // --- multiplayer race: live score broadcast + final submit ------------------
 let finishSent = false;
 let lastLiveSent = 0;
+let lastSentScore = -1;
+let lastSentWave = -1;
 
 watch(
   () => hud.running,
@@ -70,6 +73,8 @@ watch(
     if (running) {
       finishSent = false;
       lastLiveSent = 0;
+      lastSentScore = -1;
+      lastSentWave = -1;
     }
   },
 );
@@ -79,8 +84,12 @@ watch(
   (score) => {
     if (!props.race || !hud.running || hud.gameOver) return;
     const now = Date.now();
-    if (now - lastLiveSent < 2000) return;
+    if (now - lastLiveSent < 3000) return;
+    // Firestore bills per write — only broadcast actual changes.
+    if (score === lastSentScore && hud.wave === lastSentWave) return;
     lastLiveSent = now;
+    lastSentScore = score;
+    lastSentWave = hud.wave;
     updateLiveScore(props.race.code, props.race.uid, {
       score,
       wave: hud.wave,
@@ -194,7 +203,7 @@ onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
   setPilotName(props.pilotName);
-  start(props.characterId, props.race?.seed);
+  start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
@@ -294,7 +303,7 @@ const shakeClass = computed(() => {
         :wave="hud.wave"
         :music-on="settings.music"
         @resume="togglePause"
-        @restart="() => start(props.characterId, props.race?.seed)"
+        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId)"
         @quit="onLobby"
         @toggle-music="onToggleMusic"
       />
@@ -307,7 +316,7 @@ const shakeClass = computed(() => {
         :is-best="willBeBest"
         :race="!!race"
         @save="onSave"
-        @restart="() => start(props.characterId, props.race?.seed)"
+        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId)"
         @lobby="onLobby"
         @standings="emit('room')"
       />

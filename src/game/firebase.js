@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getDatabase } from 'firebase/database';
+import { getFirestore } from 'firebase/firestore';
 
 // Your web app's Firebase configuration.
 const firebaseConfig = {
@@ -13,15 +13,11 @@ const firebaseConfig = {
   measurementId: 'G-Z851J25YSG',
 };
 
-// Realtime Database instance for this project (asia-southeast1 region).
-// If you ever recreate the database in another region, copy the URL shown
-// at the top of Firebase Console → Realtime Database → Data.
-export const databaseURL =
-  'https://shooter-game-cf98f-default-rtdb.asia-southeast1.firebasedatabase.app';
-
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getDatabase(app, databaseURL);
+// Firestore resolves from the project id — no database URL or region
+// string to get wrong, unlike Realtime Database.
+export const db = getFirestore(app);
 
 // Analytics is browser-only and optional — never let it break the game.
 export async function initAnalytics() {

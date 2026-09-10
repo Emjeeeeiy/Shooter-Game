@@ -1,18 +1,20 @@
 <script setup>
 import UiIcon from './UiIcon.vue';
+import Leaderboard from './Leaderboard.vue';
 
 defineProps({
   pilotName: { type: String, default: 'Pilot' },
   email: { type: String, default: '' },
   offline: { type: Boolean, default: false },
   best: { type: Number, default: 0 },
+  cloud: { type: Boolean, default: false },
 });
 
 defineEmits(['single', 'multi', 'settings', 'logout']);
 </script>
 
 <template>
-  <div class="flex w-full max-w-md flex-col items-center">
+  <div class="flex w-full max-w-4xl flex-col items-center">
     <div class="label">Neon Strike — Command deck</div>
     <h2 class="mt-1 text-3xl font-semibold text-zinc-50">
       Welcome, <span class="text-accent">{{ pilotName }}</span>
@@ -22,7 +24,9 @@ defineEmits(['single', 'multi', 'settings', 'logout']);
       <span v-if="best > 0"> · Best {{ best.toLocaleString() }}</span>
     </p>
 
-    <div class="mt-6 grid w-full gap-3">
+    <div class="mt-6 grid w-full items-start gap-6 md:grid-cols-[1fr_1.1fr]">
+      <div>
+        <div class="grid gap-3">
       <button
         type="button"
         class="panel group p-5 text-left transition-all hover:border-accent/50"
@@ -54,14 +58,19 @@ defineEmits(['single', 'multi', 'settings', 'logout']);
         <div class="flex items-center gap-2 text-base font-semibold text-zinc-100"><UiIcon name="sliders" cls="h-4 w-4" />Settings</div>
         <p class="mt-1 text-[13px] text-zinc-500">Sound, shake, FPS meter, callsign.</p>
       </button>
-    </div>
+        </div>
 
-    <button
-      type="button"
-      class="mt-4 rounded-lg border border-danger/30 px-4 py-2 text-[12px] font-semibold text-danger transition-colors hover:bg-danger/10"
-      @click="$emit('logout')"
-    >
-      {{ offline ? '← Back to login' : 'Log out' }}
-    </button>
+        <button
+          type="button"
+          class="mt-4 rounded-lg border border-danger/30 px-4 py-2 text-[12px] font-semibold text-danger transition-colors hover:bg-danger/10"
+          @click="$emit('logout')"
+        >
+          {{ offline ? '← Back to login' : 'Log out' }}
+        </button>
+      </div>
+      <div class="min-w-0">
+        <Leaderboard :cloud="cloud" />
+      </div>
+    </div>
   </div>
 </template>
