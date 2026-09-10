@@ -357,7 +357,7 @@ function drawPlayer(ctx, game) {
   // I-frame blink
   if (player.iframes > 0 && Math.floor(player.iframes / 4) % 2 === 0) ctx.globalAlpha = 0.45;
 
-  if (activeBuff || player.isDashing) {
+  if (activeBuff || player.isDashing || game.rampartTimer > 0) {
     ctx.strokeStyle = body;
     ctx.globalAlpha *= 0.4;
     ctx.lineWidth = 1.5;
@@ -378,7 +378,7 @@ function drawPlayer(ctx, game) {
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  drawShipDetails(ctx, shipId);
+  drawShipDetails(ctx, shipId, body);
 
   ctx.restore();
   if (game.pilotName) {
@@ -426,6 +426,66 @@ export function traceShip(ctx, shipId) {
     ctx.lineTo(8, -3);
     ctx.lineTo(8, 3);
     ctx.closePath();
+  } else if (shipId === 'phantom') {
+    // Blink Striker: crescent blade, horns forward.
+    ctx.moveTo(17.5, -9.6);
+    ctx.arc(0, 0, 20, -0.5, 0.5, false);
+    ctx.arc(9, 0, 15, 0.62, -0.62, true);
+    ctx.closePath();
+  } else if (shipId === 'bulwark') {
+    // Siege Wall: twin-hull catamaran joined by a bridge, wedge nose.
+    ctx.rect(-16, -13, 26, 7);
+    ctx.rect(-16, 6, 26, 7);
+    ctx.rect(-6, -8, 14, 16);
+    ctx.moveTo(8, -9);
+    ctx.lineTo(22, 0);
+    ctx.lineTo(8, 9);
+    ctx.closePath();
+  } else if (shipId === 'hornet') {
+    // Swarm Host: slim body, broad wings, stinger tail.
+    ctx.moveTo(18, 0);
+    ctx.lineTo(-6, 6);
+    ctx.lineTo(-6, -6);
+    ctx.closePath();
+    ctx.moveTo(4, 0);
+    ctx.lineTo(-15, 13);
+    ctx.lineTo(-5, 0);
+    ctx.closePath();
+    ctx.moveTo(4, 0);
+    ctx.lineTo(-15, -13);
+    ctx.lineTo(-5, 0);
+    ctx.closePath();
+    ctx.moveTo(-6, -1.6);
+    ctx.lineTo(-22, 0);
+    ctx.lineTo(-6, 1.6);
+    ctx.closePath();
+  } else if (shipId === 'corsair') {
+    // Raider: gull-winged pirate dart.
+    ctx.moveTo(24, 0);
+    ctx.lineTo(-2, 5);
+    ctx.lineTo(-18, 16);
+    ctx.lineTo(-12, 2);
+    ctx.lineTo(-12, -2);
+    ctx.lineTo(-18, -16);
+    ctx.lineTo(-2, -5);
+    ctx.closePath();
+  } else if (shipId === 'titan') {
+    // Capital wedge with a notched stern.
+    ctx.moveTo(18, 0);
+    ctx.lineTo(-4, -15);
+    ctx.lineTo(-16, -15);
+    ctx.lineTo(-10, 0);
+    ctx.lineTo(-16, 15);
+    ctx.lineTo(-4, 15);
+    ctx.closePath();
+  } else if (shipId === 'oracle') {
+    // Seer: solid orb, nose spike — the halo ring is cut in details.
+    ctx.moveTo(12, 0);
+    ctx.arc(0, 0, 12, 0, Math.PI * 2);
+    ctx.moveTo(24, 0);
+    ctx.lineTo(10, -3);
+    ctx.lineTo(10, 3);
+    ctx.closePath();
   } else {
     // Vanguard: classic interceptor arrow.
     ctx.moveTo(22, 0);
@@ -437,7 +497,7 @@ export function traceShip(ctx, shipId) {
 }
 
 // Per-ship cockpit / armor details in dark contrast plus body-color lights.
-function drawShipDetails(ctx, shipId) {
+function drawShipDetails(ctx, shipId, body) {
   ctx.fillStyle = palette.surface;
   if (shipId === 'spectre') {
     ctx.beginPath();
@@ -470,6 +530,68 @@ function drawShipDetails(ctx, shipId) {
     ctx.beginPath();
     ctx.arc(0, -12, 2, 0, Math.PI * 2);
     ctx.arc(0, 12, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'phantom') {
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.ellipse(3, 0, 7, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(11, 0, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'bulwark') {
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.arc(-15, -9.5, 2, 0, Math.PI * 2);
+    ctx.arc(-15, 9.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(19, 0, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'hornet') {
+    ctx.strokeStyle = palette.surface;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(8, -4.5);
+    ctx.lineTo(8, 4.5);
+    ctx.moveTo(0, -5.5);
+    ctx.lineTo(0, 5.5);
+    ctx.stroke();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(-20, 0, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'corsair') {
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.arc(8, 0, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(-13, -10, 1.6, 0, Math.PI * 2);
+    ctx.arc(-13, 10, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'titan') {
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(-13, -8, 2, 0, Math.PI * 2);
+    ctx.arc(-13, 0, 2, 0, Math.PI * 2);
+    ctx.arc(-13, 8, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'oracle') {
+    ctx.fillStyle = palette.surface;
+    ctx.beginPath();
+    ctx.arc(0, 0, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
     ctx.fill();
   } else {
     ctx.beginPath();

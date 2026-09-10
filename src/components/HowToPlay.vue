@@ -5,9 +5,9 @@ const controls = [
   { keys: ['W', 'A', 'S', 'D'], action: 'Move' },
   { keys: ['Mouse'], action: 'Aim' },
   { keys: ['Click', 'Space'], action: 'Fire (hold)' },
-  { keys: ['Shift'], action: 'Dash — invincible' },
-  { keys: ['C'], action: 'Missiles (5s)' },
-  { keys: ['E'], action: 'Ship ultimate — varies by hull' },
+  { keys: ['Shift'], action: 'Dash — invincible (10 energy)' },
+  { keys: ['C'], action: 'Missiles — homing volley, no cooldown (25 energy)' },
+  { keys: ['E'], action: 'Ship ultimate — varies by hull (35 energy, 5s)' },
   { keys: ['P', 'Esc'], action: 'Pause' },
   { keys: ['M'], action: 'Mute' },
 ];
@@ -15,7 +15,7 @@ const controls = [
 const targets = [
   { shape: '8,1 15,8 8,15 1,8', color: 'text-danger', name: 'Standard', effect: 'No buff' },
   { shape: '14,8 11,13.2 5,13.2 2,8 5,2.8 11,2.8', color: 'text-skill', name: 'Gold', effect: 'Skill Enhanced' },
-  { shape: '2.5,2.5 13.5,2.5 13.5,13.5 2.5,13.5', color: 'text-accent', name: 'Cyan', effect: 'Infinite Ammo' },
+  { shape: '2.5,2.5 13.5,2.5 13.5,13.5 2.5,13.5', color: 'text-accent', name: 'Cyan', effect: 'Overcharge: fast regen' },
   { shape: '8,1 15,14 1,14', color: 'text-danger', name: 'Charger', effect: 'Lunges — dodge sideways' },
   { shape: '8,1 8,15 1,8 15,8', color: 'text-fuchsia-400', name: 'Sniper', effect: 'Strafes at range' },
   { shape: '8,1 14,6 12,13 4,13 2,6', color: 'text-yellow-300', name: 'Splitter', effect: 'Splits in two' },

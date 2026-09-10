@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 import { CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
+import MapPreview from './MapPreview.vue';
 import ShipIcon from './ShipIcon.vue';
 
 const props = defineProps({
@@ -34,7 +35,7 @@ const current = computed(
         {{
           step === 'ship'
             ? 'Each hull flies differently. You can switch ships after every run.'
-            : 'Deploy first, fight second — where to?'
+            : 'Tap an arena to launch immediately.'
         }}
       </p>
     </div>
@@ -46,7 +47,7 @@ const current = computed(
         type="button"
         class="panel p-5 text-left transition-all focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
         :class="c.id === selectedId ? 'border-accent ring-2 ring-accent/40' : 'hover:border-white/25'"
-        @click="$emit('select', c.id)"
+          @click="$emit('select', c.id); step = 'map'"
       >
         <div class="flex items-center gap-2.5">
           <ShipIcon :id="c.id" :color="c.color" />
@@ -69,7 +70,7 @@ const current = computed(
             <span class="text-zinc-500">{{ c.passive.desc }}</span>
           </div>
           <div class="flex gap-1.5">
-            <span class="shrink-0 font-semibold text-zinc-200"><kbd class="mr-1">E</kbd>{{ c.ultimate.name }}</span>
+            <span class="shrink-0 font-semibold text-zinc-200"><kbd class="mr-1">E</kbd>{{ c.ultimate.name }} · {{ c.ultimate.cooldownTicks / 60 }}s</span>
             <span class="text-zinc-500">{{ c.ultimate.desc }}</span>
           </div>
           <div class="flex gap-1.5">
@@ -96,55 +97,35 @@ const current = computed(
     </div>
 
     <div v-else class="mt-6">
-      <div class="flex items-center justify-center gap-2.5 text-[13px] text-zinc-400">
+      <div class="flex justify-start">
+        <button
+          type="button"
+          class="rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
+          @click="step = 'ship'"
+        >
+          ← Back to ships
+        </button>
+      </div>
+      <div class="mt-3 flex items-center justify-center gap-2.5 text-[13px] text-zinc-400">
         <ShipIcon :id="current.id" :color="current.color" />
         <span><span class="font-semibold text-zinc-100">{{ current.name }}</span> locked in</span>
       </div>
-      <div class="mx-auto mt-4 grid max-w-3xl grid-cols-2 gap-2 sm:grid-cols-5">
+      <div class="mx-auto mt-4 grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <button
           v-for="mp in MAP_PICKS"
           :key="mp.id"
           type="button"
           class="rounded-lg border px-2 py-2.5 text-left transition-all focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           :class="mapPick === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
-          @click="$emit('map-pick', mp.id)"
+          @click="$emit('map-pick', mp.id); $emit('launch')"
         >
-          <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
+          <MapPreview :map-id="mp.id" />
+          <div class="mt-1.5 text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
           <div class="mt-0.5 text-[11px] leading-snug text-zinc-500">{{ mp.desc }}</div>
         </button>
       </div>
     </div>
 
-    <button
-      v-if="step === 'ship'"
-      type="button"
-      class="mt-6 w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-surface transition-colors hover:bg-sky-300 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
-      @click="step = 'map'"
-    >
-      Continue with {{ current.name }} →
-    </button>
-    <template v-else>
-      <button
-        type="button"
-        class="mt-6 w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-surface transition-colors hover:bg-sky-300 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
-        @click="$emit('launch')"
-      >
-        Deploy {{ current.name }} →
-      </button>
-      <button
-        type="button"
-        class="mt-3 w-full rounded-lg border border-white/12 px-4 py-2 text-center text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-        @click="step = 'ship'"
-      >
-        ← Back to ships
-      </button>
-    </template>
-    <button
-      type="button"
-      class="mt-3 w-full rounded-lg border border-white/12 px-4 py-2 text-center text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-      @click="$emit('back')"
-    >
-      ← Back to menu
-    </button>
+
   </div>
 </template>

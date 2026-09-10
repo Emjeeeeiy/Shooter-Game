@@ -180,6 +180,19 @@ function onLobby() {
   emit('lobby');
 }
 
+// Landscape-only on phones: prompt to rotate + auto-pause while portrait.
+const isPortraitPhone = ref(false);
+
+function checkOrientation() {
+  const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
+  isPortraitPhone.value =
+    coarse && window.innerWidth < 820 && window.innerHeight > window.innerWidth;
+}
+
+watch(isPortraitPhone, (portrait) => {
+  if (portrait && hud.running && !hud.paused && !hud.gameOver) togglePause();
+});
+
 function syncAudio() {
   sfx.setMuted(settings.muted);
   sfx.setVolume(settings.volume);
@@ -202,11 +215,17 @@ function onToggleMusic() {
 onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
+  window.addEventListener('resize', checkOrientation);
+  window.addEventListener('orientationchange', checkOrientation);
+  checkOrientation();
   setPilotName(props.pilotName);
   start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId);
+  if (isPortraitPhone.value && hud.running && !hud.paused && !hud.gameOver) togglePause();
 });
 onBeforeUnmount(() => {
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
+  window.removeEventListener('resize', checkOrientation);
+  window.removeEventListener('orientationchange', checkOrientation);
 });
 
 // Touch aim: drag on the canvas aims; FIRE button holds fire.
@@ -320,6 +339,29 @@ const shakeClass = computed(() => {
         @lobby="onLobby"
         @standings="emit('room')"
       />
+
+      <div
+        v-if="isPortraitPhone && hud.running && !hud.gameOver"
+        class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-surface/90 p-6 text-center backdrop-blur-sm"
+      >
+        <svg
+          class="h-10 w-10 text-accent"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <polyline points="23 4 23 10 17 10" />
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+        </svg>
+        <div class="text-lg font-semibold text-zinc-100">Rotate your device</div>
+        <p class="max-w-[260px] text-[13px] text-zinc-500">
+          Neon Strike plays in landscape. Turn your phone sideways — your run is paused.
+        </p>
+      </div>
     </div>
   </div>
 </template>

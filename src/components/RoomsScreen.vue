@@ -15,6 +15,7 @@ import {
   useRoom,
 } from '../composables/useRoom.js';
 import { usePresence } from '../composables/usePresence.js';
+import MapPreview from './MapPreview.vue';
 import UiIcon from './UiIcon.vue';
 
 const props = defineProps({
@@ -171,6 +172,14 @@ async function onLeave() {
   emit('back');
 }
 
+// Header Back button: leave the room first when inside one.
+function goBack() {
+  if (code.value) onLeave();
+  else emit('back');
+}
+
+defineExpose({ goBack });
+
 async function onReady() {
   try {
     await toggleReady(code.value, props.uid, !me.value?.ready);
@@ -256,13 +265,7 @@ function copyCode() {
         </p>
       </div>
 
-      <button
-        type="button"
-        class="mt-4 rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-        @click="$emit('back')"
-      >
-        ← Back to menu
-      </button>
+
     </template>
 
     <!-- Inside room -->
@@ -345,7 +348,7 @@ function copyCode() {
 
         <div class="mt-4">
           <div class="label">Your ship</div>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
             <button
               v-for="c in CHARACTER_LIST"
               :key="c.id"
@@ -364,7 +367,7 @@ function copyCode() {
           <div class="label">Arena map</div>
           <div
             v-if="isHost && room?.status === 'lobby'"
-            class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3"
+            class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2"
           >
             <button
               v-for="mp in MAP_PICKS"
@@ -374,13 +377,17 @@ function copyCode() {
               :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
               @click="setRoomMap(code, mp.id)"
             >
+              <MapPreview :map-id="mp.id" class="mb-1.5" />
               <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
               <div class="text-[11px] text-zinc-500">{{ mp.desc }}</div>
             </button>
           </div>
-          <p v-else class="mt-1.5 text-[13px] text-zinc-300">
-            {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
-          </p>
+          <div v-else class="mt-2 max-w-[320px]">
+            <MapPreview :map-id="shownMap.id" />
+            <p class="mt-1.5 text-[13px] text-zinc-300">
+              {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
+            </p>
+          </div>
         </div>
 
         <div v-if="room?.status === 'lobby'" class="mt-4 flex gap-2">
@@ -489,13 +496,7 @@ function copyCode() {
         </p>
       </div>
 
-      <button
-        type="button"
-        class="mt-4 rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-        @click="onLeave"
-      >
-        Leave room
-      </button>
+      <p class="mt-4 text-[12px] text-zinc-600">Leaving? Use the Back button in the header — it checks you out of the room.</p>
     </template>
   </div>
 </template>

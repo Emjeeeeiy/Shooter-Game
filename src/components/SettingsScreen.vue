@@ -110,12 +110,5 @@ function saveName() {
       </div>
     </div>
 
-    <button
-      type="button"
-      class="mt-4 rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-      @click="emit('back')"
-    >
-      ← Back to menu
-    </button>
   </div>
 </template>

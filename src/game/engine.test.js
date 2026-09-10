@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, createHudState } from './engine.js';
-import { dash as DASH, missile as MISSILE, shock as SHOCK } from './constants.js';
+import { CHARACTER_LIST, dash as DASH, missile as MISSILE, shock as SHOCK } from './constants.js';
 
 function makeGame() {
   const hud = createHudState();
@@ -50,20 +50,20 @@ describe('dash', () => {
 });
 
 describe('tick cooldowns', () => {
-  it('missiles and shock use ticks, not wall clock', () => {
+  it('missiles are cooldown-free; ultimates run flat 5s ticks', () => {
     const { g } = makeGame();
+    g.energy = 100;
     g.fireMissiles();
-    expect(g.missileCooldown).toBeGreaterThan(0);
-    const m0 = g.missileCooldown;
-    g.updateCooldowns();
-    expect(g.missileCooldown).toBe(m0 - 1);
+    expect(g.missileCooldown).toBe(0);
+    const n = g.missiles.length;
+    g.fireMissiles();
+    expect(g.missiles.length).toBeGreaterThan(n);
     g.shockWave();
-    expect(g.shockCooldown).toBeGreaterThan(0);
+    expect(g.shockCooldown).toBe(300);
     // Pausing freezes the sim (no auto-decrement outside update).
-    const s0 = g.shockCooldown;
     g.pause();
     g.update();
-    expect(g.shockCooldown).toBe(s0);
+    expect(g.shockCooldown).toBe(300);
   });
 });
 
@@ -223,21 +223,28 @@ describe('ship ultimates', () => {
     e.maxHealth = Math.max(hp, e.maxHealth);
   }
 
-  it('spectre rift slows enemies', () => {
+  it('spectre blink strikes along its path', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
-    g.start('spectre');
-    enemyNear(g);
+    g.start('spectre', 11);
+    g.obstacles = [];
+    g.setPointer(900, 350); // aim +x
+    enemyNear(g, 20);
     g.shockWave();
-    expect(g.enemies[0]?.slowTimer).toBeGreaterThan(0);
+    expect(g.enemies[0].health).toBe(14);
+    expect(g.player.x).toBeGreaterThan(1800);
   });
 
-  it('juggernaut slam clears weak enemies', () => {
+  it('juggernaut bull charge dashes through the horde', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
-    g.start('juggernaut');
-    enemyNear(g, 5);
+    g.start('juggernaut', 11);
+    g.obstacles = [];
+    enemyNear(g, 1);
     g.shockWave();
+    expect(g.player.isDashing).toBe(true);
+    expect(g.player.dashTime).toBe(40);
+    for (let t = 0; t < 3; t += 1) g.update();
     expect(g.enemies.length).toBe(0);
   });
 
@@ -380,6 +387,149 @@ describe('ship kits', () => {
       g.pickups.length = 0; // ignore random drops for an exact assertion
     }
     expect(g.player.health).toBe(54);
+  });
+});
+
+describe('expanded roster', () => {
+  it('every hull has a complete kit', () => {
+    expect(CHARACTER_LIST.length).toBe(10);
+    for (const c of CHARACTER_LIST) {
+      expect(c.passive?.name).toBeTruthy();
+      expect(c.ultimate?.id).toBeTruthy();
+      expect(c.kit).toBeTruthy();
+      expect(c.dash?.speed).toBeGreaterThan(0);
+      expect(c.missiles?.count).toBeGreaterThan(0);
+    }
+  });
+
+  it('phantom refunds dash kills, corsair plunders, oracle foresight holds', () => {
+    let hud = createHudState();
+    let g = new Game(hud, () => {});
+    g.start('phantom', 21);
+    g.enemies.push(minEnemy(g.player.x + 30, g.player.y, 1));
+    g.dash();
+    for (let t = 0; t < 3; t += 1) {
+      g.update();
+      g.pickups.length = 0;
+    }
+    expect(g.kills).toBe(1);
+    expect(g.dashCharges).toBe(2);
+
+    hud = createHudState();
+    g = new Game(hud, () => {});
+    g.start('corsair', 21);
+    g.energy = 50;
+    g.enemies.push(minEnemy());
+    g.killEnemy(0);
+    expect(g.energy).toBe(56);
+
+    hud = createHudState();
+    g = new Game(hud, () => {});
+    g.start('oracle', 21);
+    g.applyBuff('SKILL');
+    expect(g.buffTimer).toBe(900);
+  });
+
+  it('stasis freezes, vortex drags, overdrive surges', () => {
+    let hud = createHudState();
+    let g = new Game(hud, () => {});
+    g.start('phantom', 21);
+    g.enemies.push(minEnemy(g.player.x + 100, g.player.y, 30));
+    g.shockWave();
+    expect(g.enemies[0]?.slowTimer).toBe(240);
+    expect(g.enemies[0].health).toBe(27);
+
+    hud = createHudState();
+    g = new Game(hud, () => {});
+    g.start('corsair', 21);
+    g.enemies.push(minEnemy(g.player.x + 500, g.player.y, 30));
+    const ex = g.player.x + 500;
+    const ey = g.player.y;
+    g.shockWave();
+    const after = Math.hypot(g.enemies[0].x - ex, g.enemies[0].y - ey);
+    expect(g.enemies[0].health).toBeLessThan(30);
+    expect(after).toBeGreaterThan(0);
+
+    hud = createHudState();
+    g = new Game(hud, () => {});
+    g.start('oracle', 21);
+    g.energy = 100;
+    g.shockWave();
+    expect(g.activeBuff).toBe('SKILL');
+    expect(g.energy).toBe(100);
+  });
+});
+
+describe('skill mana costs', () => {
+  it('denies dash without energy and keeps the charge', () => {
+    const { g } = makeGame();
+    g.energy = 5;
+    g.dash();
+    expect(g.player.isDashing).toBe(false);
+    expect(g.dashCharges).toBe(2);
+  });
+
+  it('denies missiles and ultimates without energy or cooldown', () => {
+    const { g } = makeGame();
+    g.energy = 5;
+    g.fireMissiles();
+    expect(g.missiles.length).toBe(0);
+    expect(g.missileCooldown).toBe(0);
+    g.shockWave();
+    expect(g.shockCooldown).toBe(0);
+    expect(g.shockWaves.length).toBe(0);
+  });
+
+  it('pays energy on cast', () => {
+    const { g } = makeGame();
+    g.energy = 100;
+    g.dash();
+    expect(g.energy).toBe(90);
+    g.energy = 100;
+    g.fireMissiles();
+    expect(g.energy).toBe(75);
+  });
+
+  it('basic fire costs no mana', () => {
+    const { g } = makeGame();
+    g.energy = 40;
+    for (let i = 0; i < 10; i += 1) g.fire();
+    expect(g.energy).toBe(40);
+    expect(g.bullets.length).toBeGreaterThan(0);
+  });
+});
+
+describe('new ultimates', () => {
+  it('bulwark rampart thorns attackers', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('bulwark', 21);
+    g.player.health = 100;
+    g.enemies.push(minEnemy(g.player.x + 20, g.player.y, 1));
+    g.shockWave();
+    expect(g.rampartTimer).toBe(300);
+    g.update();
+    expect(g.enemies.length).toBe(0);
+    expect(g.player.health).toBeGreaterThanOrEqual(105);
+  });
+
+  it('hornet barrage bursts radially and frenzies', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('hornet', 21);
+    g.shockWave();
+    expect(g.bullets.length).toBe(24);
+    expect(g.frenzyTimer).toBe(300);
+  });
+
+  it('titan annihilator beams toward aim', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('titan', 21);
+    g.setPointer(900, 350);
+    g.enemies.push(minEnemy(g.player.x + 300, g.player.y, 30));
+    g.shockWave();
+    expect(g.enemies[0].health).toBe(10);
   });
 });
 

@@ -24,6 +24,7 @@ const selected = ref('vanguard');
 const mapPick = ref('grid');
 const runMapId = ref('grid');
 const runId = ref(0);
+const roomsRef = ref(null);
 const race = ref(null); // { code, uid, name, seed, mode } when racing
 const roomCode = ref(''); // rejoin target for the rooms screen
 const nameOverride = ref('');
@@ -167,6 +168,19 @@ function onRename(name, done) {
 }
 
 // --- single player ----------------------------------------------------------
+// Header Back button: leaves the room first when inside one.
+const backAction = computed(() => {
+  if (screen.value === 'lobby' || screen.value === 'settings') {
+    return () => {
+      screen.value = 'menu';
+    };
+  }
+  if (screen.value === 'rooms') {
+    return () => roomsRef.value?.goBack();
+  }
+  return null;
+});
+
 function toLobby() {
   race.value = null;
   screen.value = 'lobby';
@@ -266,28 +280,32 @@ async function onRunSaved({ name, score, wave, stats }) {
   <div :class="screen === 'arena' ? 'h-dvh w-full overflow-hidden' : 'min-h-dvh w-full px-4 py-8 sm:px-6 lg:py-10'">
     <BattleBackground v-if="screen !== 'arena'" />
     <div :class="screen === 'arena' ? 'relative z-10 mx-auto flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6'">
-      <header v-if="screen !== 'arena'" class="flex w-full items-center justify-between gap-4">
-        <div class="flex items-center gap-2.5">
-          <span class="h-2 w-2 rounded-full bg-accent" />
-          <h1 class="text-sm font-semibold tracking-[0.22em] text-zinc-200 uppercase">
-            Neon Strike
-          </h1>
+      <header v-if="screen !== 'arena'" class="sticky top-0 z-40 w-full border-b border-white/5 bg-surface/85 backdrop-blur-md">
+        <div class="flex items-center justify-between gap-4 py-3">
+          <div class="flex items-center gap-2.5">
+            <span class="h-2 w-2 rounded-full bg-accent" />
+            <h1 class="text-sm font-semibold tracking-[0.22em] text-zinc-200 uppercase">
+              Neon Strike
+            </h1>
+          </div>
+          <div class="flex items-center gap-3">
+            <p class="hidden text-[13px] text-zinc-500 sm:block">Top-down arena shooter</p>
+            <span
+              v-if="user && !offline"
+              class="hidden items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-300 sm:flex"
+            >
+              <UiIcon name="user" cls="h-3.5 w-3.5" />{{ pilotName }}
+            </span>
+          </div>
         </div>
-        <div class="flex items-center gap-3">
-          <p class="hidden text-[13px] text-zinc-500 sm:block">Top-down arena shooter</p>
-          <span
-            v-if="user && !offline"
-            class="hidden items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-300 sm:flex"
+        <div v-if="backAction" class="pb-3">
+          <button
+            type="button"
+            class="rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
+            @click="backAction()"
           >
-            <UiIcon name="user" cls="h-3.5 w-3.5" />{{ pilotName }}
-          </span>
-          <span
-            v-if="screen === 'arena'"
-            class="hidden items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-300 sm:flex"
-          >
-            <span class="h-2 w-2 rounded-full" :style="{ background: selectedCharacter.color }" />
-            {{ selectedCharacter.name }}
-          </span>
+            ← Back
+          </button>
         </div>
       </header>
 
@@ -371,6 +389,7 @@ async function onRunSaved({ name, score, wave, stats }) {
 
       <RoomsScreen
         v-else-if="screen === 'rooms' && user"
+        ref="roomsRef"
         :key="roomCode || 'gate'"
         :uid="user.uid"
         :pilot-name="pilotName"

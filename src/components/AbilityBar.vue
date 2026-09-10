@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue';
+import { dash as DASH, missile as MISSILE, shock as SHOCK } from '../game/constants.js';
 
 const props = defineProps({
   hud: { type: Object, required: true },
@@ -15,6 +16,7 @@ const abilities = computed(() => [
     cooldown: 0,
     charges: props.hud.dashCharges ?? 0,
     max: props.hud.dashMax ?? 2,
+    cost: DASH.energyCost,
   },
   {
     key: 'C',
@@ -23,6 +25,7 @@ const abilities = computed(() => [
     color: 'text-missile',
     ready: props.hud.missileCooldown === 0,
     cooldown: props.hud.missileCooldown,
+    cost: MISSILE.energyCost,
   },
   {
     key: 'E',
@@ -31,6 +34,7 @@ const abilities = computed(() => [
     color: 'text-shock',
     ready: props.hud.shockCooldown === 0,
     cooldown: props.hud.shockCooldown,
+    cost: SHOCK.energyCost,
   },
 ]);
 </script>
@@ -75,6 +79,12 @@ const abilities = computed(() => [
       </div>
 
       <div class="label relative z-10 mt-2">{{ ability.name }}</div>
+      <div class="relative z-10 mt-0.5 flex items-center gap-1 text-[10px] font-semibold text-accent tabular-nums">
+        <svg class="h-2.5 w-2.5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+        </svg>
+        {{ ability.cost }}
+      </div>
 
       <div v-if="ability.charges !== undefined" class="relative z-10 mt-1 flex gap-1">
         <span

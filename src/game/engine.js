@@ -126,6 +126,8 @@ export class Game {
     this.damageTaken = 0;
     this.bossActive = false;
     this.bossesSlain = 0;
+    this.rampartTimer = 0;
+    this.frenzyTimer = 0;
 
     this.spawnTimer = 0;
     this.spawnInterval = SPAWN.baseInterval;
@@ -424,15 +426,21 @@ export class Game {
     return this.cooldownFor(baseTicks);
   }
 
+  /** Pay an energy (mana) cost for a skill. Denies with feedback when broke. */
+  spendEnergy(amount) {
+    if (this.energy < amount) {
+      this.emit('sfx', { name: 'deny' });
+      this.emit('notice', { text: 'Not enough energy', tone: 'muted' });
+      return false;
+    }
+    this.energy -= amount;
+    return true;
+  }
+
   fire() {
     if (!this.running || this.paused) return;
 
-    const cost = this.character?.energyCost ?? BULLET.energyCost;
-    if (this.activeBuff !== 'AMMO') {
-      if (this.energy < cost) return;
-      this.energy -= cost;
-    }
-
+    // Basic plasma is free and spammable — energy is reserved for skills.
     const target = this.worldPointer;
     const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
     const buffed = this.activeBuff === 'SKILL';
@@ -465,6 +473,7 @@ export class Game {
       this.emit('sfx', { name: 'deny' });
       return;
     }
+    if (!this.spendEnergy(DASH.energyCost)) return;
     this.dashCharges -= 1;
     if (this.dashRecharge <= 0) {
       this.dashRecharge = Math.round(
@@ -496,6 +505,7 @@ export class Game {
   fireMissiles() {
     if (!this.running || this.paused) return;
     if (this.missileCooldown > 0) return;
+    if (!this.spendEnergy(MISSILE.energyCost)) return;
     this.missileCooldown = this.abilityTotal('missile');
 
     const buffed = this.activeBuff === 'SKILL';
@@ -545,10 +555,17 @@ export class Game {
   shockWave() {
     if (!this.running || this.paused) return;
     if (this.shockCooldown > 0) return;
+    if (!this.spendEnergy(SHOCK.energyCost)) return;
     const ult = this.character.ultimate?.id ?? 'shock';
-    if (ult === 'rift') return this.ultRift();
-    if (ult === 'slam') return this.ultSlam();
+    if (ult === 'blink') return this.ultBlink();
+    if (ult === 'charge') return this.ultCharge();
     if (ult === 'restore') return this.ultRestore();
+    if (ult === 'stasis') return this.ultStasis();
+    if (ult === 'rampart') return this.ultRampart();
+    if (ult === 'barrage') return this.ultBarrage();
+    if (ult === 'vortex') return this.ultVortex();
+    if (ult === 'overdrive') return this.ultOverdrive();
+    if (ult === 'annihilator') return this.ultAnnihilator();
     return this.ultShock();
   }
 
@@ -595,36 +612,175 @@ export class Game {
     if (hits >= 5) this.hitStop(3);
   }
 
-  // Spectre: lighter blast that slows everything it touches.
-  ultRift() {
+  // Spectre: teleport toward aim, shredding everything along the path.
+  ultBlink() {
+    this.shockCooldown = this.ultCooldown();
+    const t = this.worldPointer;
+    const a0 = Math.atan2(t.y - this.player.y, t.x - this.player.x);
+    const dist = Math.min(420, Math.hypot(t.x - this.player.x, t.y - this.player.y));
+    const x0 = this.player.x;
+    const y0 = this.player.y;
+    // Step the blink so walls still block it.
+    const steps = 6;
+    for (let s = 1; s <= steps; s += 1) {
+      this.movePlayer((Math.cos(a0) * dist) / steps, (Math.sin(a0) * dist) / steps);
+      this.burst(this.player.x, this.player.y, palette.magnet, 3, 2);
+    }
+    const x1 = this.player.x;
+    const y1 = this.player.y;
+    const len2 = Math.max(1, (x1 - x0) ** 2 + (y1 - y0) ** 2);
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      const tt = Math.max(
+        0,
+        Math.min(1, ((e.x - x0) * (x1 - x0) + (e.y - y0) * (y1 - y0)) / len2),
+      );
+      const px = x0 + (x1 - x0) * tt;
+      const py = y0 + (y1 - y0) * tt;
+      if (Math.hypot(e.x - px, e.y - py) > 90 + e.radius) continue;
+      e.flash = 8;
+      this.burst(e.x, e.y, palette.magnet, 8, 7);
+      this.damageEnemy(i, 6);
+    }
+    this.player.iframes = Math.max(this.player.iframes, 30);
+    this.emit('sfx', { name: 'dash' });
+  }
+
+  // Juggernaut: unstoppable charge toward aim — the dash machinery
+  // does the killing, invincible, straight through the horde.
+  ultCharge() {
+    this.shockCooldown = this.ultCooldown();
+    const t = this.worldPointer;
+    this.player.isDashing = true;
+    this.player.dashTime = 40;
+    this.player.dashAngle = Math.atan2(t.y - this.player.y, t.x - this.player.x);
+    this.burst(this.player.x, this.player.y, palette.missile, 30, 10);
+    this.emit('shake', { magnitude: 'medium' });
+    this.emit('sfx', { name: 'dash' });
+  }
+
+  // Phantom: freeze the whole swarm in time, then crack it.
+  ultStasis() {
     this.shockCooldown = this.ultCooldown();
     this.pushShockVisual();
     let hits = 0;
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const e = this.enemies[i];
-      if (Math.hypot(e.x - this.player.x, e.y - this.player.y) > 450) continue;
+      if (Math.hypot(e.x - this.player.x, e.y - this.player.y) > 900) continue;
       hits += 1;
-      e.slowTimer = 300;
-      this.burst(e.x, e.y, palette.magnet, 6, 6);
+      e.slowTimer = 240;
+      e.flash = 8;
+      this.burst(e.x, e.y, palette.magnet, 5, 5);
+      this.damageEnemy(i, 3);
     }
-    hits = this.nova(450, 4, 14, palette.magnet) || hits;
     this.burst(this.player.x, this.player.y, palette.magnet, 40, 12);
-    this.emit('notice', { text: 'Rift slows the swarm', tone: 'magnet' });
+    this.emit('notice', { text: 'Stasis — the swarm freezes', tone: 'magnet' });
     this.emit('shake', { magnitude: 'medium' });
     this.emit('sfx', { name: 'shock' });
-    if (hits >= 5) this.hitStop(2);
+    if (hits >= 5) this.hitStop(3);
   }
 
-  // Juggernaut: devastating close-range slam.
-  ultSlam() {
+  // Corsair: drags everything nearby into the guns, then crushes.
+  ultVortex() {
     this.shockCooldown = this.ultCooldown();
     this.pushShockVisual();
-    const hits = this.nova(420, 10, 30, palette.missile, 12, 10);
-    this.burst(this.player.x, this.player.y, palette.missile, 60, 16);
+    let hits = 0;
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
+      if (d > 600 || d < 1) continue;
+      hits += 1;
+      const ka = Math.atan2(this.player.y - e.y, this.player.x - e.x);
+      const pull = Math.min(d - (e.radius + 30), 220);
+      if (pull > 0) {
+        e.x = clamp(e.x + Math.cos(ka) * pull, e.radius, WORLD_WIDTH - e.radius);
+        e.y = clamp(e.y + Math.sin(ka) * pull, e.radius, WORLD_HEIGHT - e.radius);
+      }
+      e.health -= 5;
+      e.flash = 8;
+      this.burst(e.x, e.y, palette.magnet, 6, 6);
+      if (e.health <= 0) this.killEnemy(i, { viaShock: true });
+    }
+    this.burst(this.player.x, this.player.y, palette.magnet, 40, 12);
+    this.emit('notice', { text: 'Vortex drags them in', tone: 'magnet' });
+    this.emit('shake', { magnitude: 'medium' });
+    this.emit('sfx', { name: 'shock' });
+    if (hits >= 5) this.hitStop(3);
+  }
+
+  // Bulwark: thorn shield — attackers die on contact and mend the hull.
+  ultRampart() {
+    this.shockCooldown = this.ultCooldown();
+    this.pushShockVisual();
+    this.rampartTimer = 300;
+    this.burst(this.player.x, this.player.y, palette.repair, 40, 12);
+    this.emit('notice', { text: 'Rampart — come and take it', tone: 'repair' });
+    this.emit('sfx', { name: 'buff' });
+  }
+
+  // Hornet: radial burst plus a firing frenzy.
+  ultBarrage() {
+    this.shockCooldown = this.ultCooldown();
+    for (let k = 0; k < 24; k += 1) {
+      const a = (k / 24) * Math.PI * 2;
+      this.bullets.push({
+        x: this.player.x + Math.cos(a) * 30,
+        y: this.player.y + Math.sin(a) * 30,
+        vx: Math.cos(a) * BULLET.speed,
+        vy: Math.sin(a) * BULLET.speed,
+        radius: BULLET.radius,
+        color: palette.skill,
+        life: BULLET.life,
+        damage: 2,
+      });
+    }
+    this.frenzyTimer = 300;
+    this.burst(this.player.x, this.player.y, palette.skill, 30, 10);
+    this.emit('notice', { text: 'Barrage — guns hot', tone: 'skill' });
+    this.emit('shake', { magnitude: 'small' });
+    this.emit('sfx', { name: 'missile' });
+  }
+
+  // Titan: hitscan railbeam toward aim — instant, piercing, brutal.
+  ultAnnihilator() {
+    this.shockCooldown = this.ultCooldown();
+    const t = this.worldPointer;
+    const a0 = Math.atan2(t.y - this.player.y, t.x - this.player.x);
+    const LEN = 900;
+    const HALF = 60;
+    const ca = Math.cos(a0);
+    const sa = Math.sin(a0);
+    let hits = 0;
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      const dx = e.x - this.player.x;
+      const dy = e.y - this.player.y;
+      const along = dx * ca + dy * sa;
+      if (along < 0 || along > LEN) continue;
+      if (Math.abs(-dx * sa + dy * ca) > HALF + e.radius) continue;
+      hits += 1;
+      e.flash = 8;
+      this.burst(e.x, e.y, palette.danger, 10, 8);
+      this.damageEnemy(i, 20);
+    }
+    for (let d = 30; d < LEN; d += 24) {
+      this.burst(this.player.x + ca * d, this.player.y + sa * d, palette.danger, 2, 2);
+    }
     this.emit('shake', { magnitude: 'big' });
     this.emit('sfx', { name: 'shock' });
-    this.hitStop(5);
-    if (hits === 0) this.emit('notice', { text: 'Slam missed', tone: 'muted' });
+    this.hitStop(6);
+    if (hits === 0) this.emit('notice', { text: 'Annihilator missed', tone: 'muted' });
+  }
+
+  // Oracle: full energy plus a Skill surge.
+  ultOverdrive() {
+    this.shockCooldown = this.ultCooldown();
+    this.energy = ENERGY.max;
+    this.applyBuff('SKILL');
+    this.burst(this.player.x, this.player.y, palette.skill, 40, 12);
+    this.emit('notice', { text: 'Overdrive engaged', tone: 'skill' });
+    this.emit('shake', { magnitude: 'small' });
+    this.emit('sfx', { name: 'buff' });
   }
 
   // Warden: heal + recharge, burns nearby foes.
@@ -633,6 +789,16 @@ export class Game {
     this.pushShockVisual();
     this.player.health = Math.min(this.player.maxHealth, this.player.health + 35);
     this.energy = Math.min(ENERGY.max, this.energy + 50);
+    // Drag distant pickups toward the blast.
+    for (const pk of this.pickups) {
+      const pd = Math.hypot(pk.x - this.player.x, pk.y - this.player.y);
+      if (pd > 1 && pd <= 900) {
+        const pull = Math.min(pd * 0.6, 400);
+        const pa = Math.atan2(this.player.y - pk.y, this.player.x - pk.x);
+        pk.x += Math.cos(pa) * pull;
+        pk.y += Math.sin(pa) * pull;
+      }
+    }
     const hits = this.nova(550, 4, 14, palette.repair);
     this.burst(this.player.x, this.player.y, palette.repair, 50, 12);
     this.emit('notice', { text: '+35 integrity field', tone: 'repair' });
@@ -850,6 +1016,8 @@ export class Game {
     this.score +=
       e.type.score * e.maxHealth * this.multiplier * (e.scoreMult ?? 1) * (this.character?.scoreMult ?? 1);
     this.kills += 1;
+    const energyBounty = this.character?.energyOnKill ?? 0;
+    if (energyBounty > 0) this.energy = Math.min(ENERGY.max, this.energy + energyBounty);
     this.emit('sfx', { name: e.isBoss ? 'bossdie' : 'explosion' });
     if (e.isBoss) {
       this.bossesSlain += 1;
@@ -908,7 +1076,7 @@ export class Game {
     if (!buff) return;
 
     this.activeBuff = name;
-    this.buffTimer = BUFF_DURATION;
+    this.buffTimer = Math.round(BUFF_DURATION * (this.character?.buffDurationMult ?? 1));
     this.emit('notice', { text: buff.label, note: buff.note, tone: name.toLowerCase() });
     this.emit('sfx', { name: 'buff' });
   }
@@ -1014,6 +1182,8 @@ export class Game {
 
     this.updateBuff();
     this.updateCombo();
+    if (this.rampartTimer > 0) this.rampartTimer -= 1;
+    if (this.frenzyTimer > 0) this.frenzyTimer -= 1;
     this.updateCooldowns();
     this.updateEnergy();
     this.updateFiring();
@@ -1075,7 +1245,7 @@ export class Game {
     if (!this.fireHeld || this.fireCooldown > 0) return;
 
     this.fire();
-    this.fireCooldown = BULLET.interval;
+    this.fireCooldown = this.frenzyTimer > 0 ? 3 : BULLET.interval;
   }
 
   updatePlayer() {
@@ -1106,6 +1276,10 @@ export class Game {
           this.killEnemy(i);
           if (dashHeal > 0) {
             p.health = Math.min(p.maxHealth, p.health + dashHeal);
+          }
+          // Phantom passive: dash kills refund one charge.
+          if (this.character.dashRefundOnKill && this.dashCharges < this.dashMax()) {
+            this.dashCharges += 1;
           }
         }
       }
@@ -1242,6 +1416,17 @@ export class Game {
       if (slowed) {
         e.slowTimer -= 1;
         e.speed *= 0.45;
+      }
+
+      // Rampart thorns (Bulwark ultimate): attackers die and mend the hull.
+      const touching = Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius;
+      if (touching && this.rampartTimer > 0 && !p.isDashing) {
+        if (e.isBoss) this.damageEnemy(i, 10);
+        else this.killEnemy(i);
+        p.health = Math.min(p.maxHealth, p.health + 5);
+        this.burst(e.x, e.y, palette.repair, 12, 7);
+        this.emit('sfx', { name: 'explosion' });
+        continue;
       }
 
       // Contact damage (dash grants invincibility, iframes grant grace).

@@ -6,8 +6,8 @@ import { MINIMAP_SIZE, VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_WIDTH } from
 
 const STEP_MS = 1000 / 60;
 const MAX_STEPS = 5;
-// Camera zoom: 1.0 = baseline view. Raise to see less world but bigger.
-const ZOOM = 1.0;
+// Camera zoom: below 1.0 shows more of the map (zoomed out).
+const ZOOM = 0.75;
 
 /**
  * Owns the engine, the single animation frame loop, and input wiring.
