@@ -5,6 +5,7 @@ const STORAGE_KEY = 'neonStrike_settings_v1';
 const defaults = {
   volume: 0.7,
   muted: false,
+  music: true,
   shake: true,
   showFps: false,
 };
@@ -38,6 +39,9 @@ export function useSettings() {
   function toggleMute() {
     state.muted = !state.muted;
   }
+  function toggleMusic() {
+    state.music = !state.music;
+  }
   function setVolume(v) {
     state.volume = Math.max(0, Math.min(1, Number(v) || 0));
     if (state.volume > 0) state.muted = false;
@@ -48,5 +52,5 @@ export function useSettings() {
   function toggleFps() {
     state.showFps = !state.showFps;
   }
-  return { settings: state, toggleMute, setVolume, toggleShake, toggleFps };
+  return { settings: state, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps };
 }

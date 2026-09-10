@@ -18,6 +18,35 @@ npm run preview  # preview production build
 npm test         # vitest unit tests
 ```
 
+## Firebase setup (auth + realtime database)
+
+The app uses Firebase Authentication (email/password) and Realtime Database
+(global scores, multiplayer race rooms). One-time console setup:
+
+1. Go to [Firebase Console](https://console.firebase.google.com/) → project
+   `shooter-game-cf98f` (config lives in `src/game/firebase.js`).
+2. **Authentication → Sign-in method** → enable **Email/Password**.
+3. **Realtime Database → Create database** (locked mode is fine).
+4. **Realtime Database → Rules** → paste the contents of
+   `database.rules.json` from this repo → Publish.
+5. If your database URL is not
+   `https://shooter-game-cf98f-default-rtdb.firebaseio.com`
+   (e.g. a regional instance), update `databaseURL` in
+   `src/game/firebase.js` to match.
+
+Flow: login/register (or Continue offline) → menu
+(Single player / Multiplayer race / Settings) → ship hangar → arena.
+Multiplayer rooms race live scores — everyone flies their own run at the
+same time; host starts, standings update live, results when all finish.
+
+Database layout:
+
+```
+users/{uid}  = { name, email, createdAt, gamesPlayed, bestScore }
+scores/      = push { uid, name, score, wave, kills, timeSec, ts }
+rooms/{CODE} = { host, status, members: {uid: {name, ready, ship}}, live: {...} }
+```
+
 ## Controls
 
 | Input | Action |
@@ -55,11 +84,15 @@ src/
     useGame.js        # loop, input, pause, touch, settings wiring
     useLeaderboard.js # localStorage top-10 with validation
     useSettings.js    # volume/shake/fps/mute persisted settings
+    useAuth.js        # Firebase email/password auth + offline mode
+    useCloudBoard.js  # global top-10 scores in RTDB
+    useRoom.js        # multiplayer race rooms in RTDB
   components/
-    GameStage.vue, Hud.vue, AbilityBar.vue, Minimap.vue,
-    Banner.vue, StatBar.vue, StartOverlay.vue,
-    GameOverOverlay.vue, PauseOverlay.vue, SettingsPanel.vue,
-    TouchControls.vue, Leaderboard.vue
+    AuthScreen.vue, MainMenu.vue, SettingsScreen.vue, RoomsScreen.vue,
+    RacePanel.vue, Lobby.vue, GameStage.vue, Hud.vue, AbilityBar.vue,
+    Minimap.vue, Banner.vue, StatBar.vue, GameOverOverlay.vue,
+    PauseOverlay.vue, SettingsPanel.vue, TouchControls.vue,
+    Leaderboard.vue (Local/Global tabs), HowToPlay.vue
 ```
 
 * Engine never touches DOM. Vue reads a `hud` mirror synced once per frame.
@@ -75,9 +108,12 @@ All gameplay numbers live in `src/game/constants.js` (`player, bullet, energy, d
 * `vite.config.js` uses relative `base`, sourcemaps, Vitest config.
 * PWA manifest at `public/manifest.webmanifest`.
 * CI: `.github/workflows/ci.yml` runs `npm test` + `npm run build`.
-* Scores stored locally (`neonStrike_leaderboard_v2`, top 10).
+* Scores stored locally (`neonStrike_leaderboard_v2`, top 10) + global top 10
+  in RTDB (`scores`) for signed-in players.
+* RTDB security rules ship as `database.rules.json` — paste into the console.
 
 ## Roadmap
 
 * [x] Tick cooldowns, dash charges, combo, pickups, boss
-* [ ] Online leaderboard, replays, more biomes
+* [x] Firebase auth, global leaderboard, multiplayer race rooms
+* [ ] Shared-arena realtime PvP, replays, more biomes

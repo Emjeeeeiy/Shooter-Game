@@ -74,7 +74,7 @@ describe('scaling caps', () => {
     for (let i = 0; i < 20; i += 1) g.spawnEnemy();
     for (const e of g.enemies) {
       expect(e.speed).toBeLessThanOrEqual(4.3);
-      expect(e.health).toBeLessThanOrEqual(8);
+      expect(e.health).toBeLessThanOrEqual(10);
     }
   });
 
@@ -125,10 +125,10 @@ describe('pickups + boss', () => {
     expect(g.player.health).toBeGreaterThan(50);
   });
 
-  it('spawns a boss on wave 5', () => {
+  it('spawns a boss on wave 20', () => {
     const { g } = makeGame();
-    g.kills = 9;
-    g.wave = 4;
+    g.kills = 199;
+    g.wave = 19;
     g.enemies.push({
       x: 100, y: 100, radius: 10, speed: 1, health: 1, maxHealth: 1,
       color: '#fff', shape: 'diamond', pulse: 0,
@@ -136,7 +136,7 @@ describe('pickups + boss', () => {
       behavior: 'chase', seed: 1, state: 'chase', stateTimer: 0, lockAngle: 0, flash: 0, isBoss: false,
     });
     g.killEnemy(g.enemies.length - 1);
-    expect(g.wave).toBe(5);
+    expect(g.wave).toBe(20);
     expect(g.enemies.some((e) => e.isBoss)).toBe(true);
   });
 });
@@ -150,6 +150,143 @@ describe('iframes', () => {
     expect(g.player.iframes).toBeGreaterThan(0);
     g.damagePlayer(10);
     expect(g.player.health).toBe(hp - 10); // ignored during iframes
+  });
+});
+
+function minEnemy(x = 100, y = 100, hp = 1) {
+  return {
+    x, y, radius: 15, speed: 1, health: hp, maxHealth: hp,
+    color: '#fff', shape: 'diamond', pulse: 0,
+    type: { name: 'NORMAL', score: 100 }, buff: null, drop: null,
+    behavior: 'chase', seed: 1, state: 'chase', stateTimer: 0, lockAngle: 0,
+    flash: 0, slowTimer: 0, isBoss: false,
+  };
+}
+
+describe('threat tiers', () => {
+  it('computes tiers and eases early waves', () => {
+    const { g } = makeGame();
+    g.wave = 1;
+    expect(g.tier()).toBe(0);
+    g.wave = 10;
+    expect(g.tier()).toBe(0);
+    g.wave = 11;
+    expect(g.tier()).toBe(1);
+    expect(g.spawnIntervalFor(1)).toBeGreaterThan(g.spawnIntervalFor(11));
+  });
+
+  it('announces a new tier with a patch-up', () => {
+    const hud = createHudState();
+    const events = [];
+    const g = new Game(hud, (t, p) => events.push([t, p]));
+    g.start();
+    g.kills = 99;
+    g.wave = 10;
+    g.player.health = 40;
+    g.enemies.push(minEnemy());
+    g.killEnemy(g.enemies.length - 1);
+    expect(g.wave).toBe(11);
+    expect(g.player.health).toBeGreaterThan(40);
+    expect(events.some(([t, p]) => t === 'banner' && String(p.text).includes('Threat'))).toBe(true);
+  });
+
+  it('keeps enemy size fixed at high waves', () => {
+    const { g } = makeGame();
+    g.wave = 30;
+    for (let i = 0; i < 30; i += 1) g.spawnEnemy();
+    expect(g.enemies.length).toBeGreaterThan(0);
+    for (const e of g.enemies) {
+      expect(e.radius).toBe(e.type.radius ?? 15);
+    }
+  });
+});
+
+describe('boss roster', () => {
+  it('cycles boss types as bosses fall', () => {
+    const { g } = makeGame();
+    g.spawnBoss();
+    const first = g.enemies.find((e) => e.isBoss);
+    expect(first?.boss?.id).toBe('dreadnought');
+    first.health = 1;
+    g.damageEnemy(g.enemies.indexOf(first), 5);
+    expect(g.bossesSlain).toBe(1);
+    g.spawnBoss();
+    const second = g.enemies.filter((e) => e.isBoss).pop();
+    expect(second?.boss?.id).toBe('wyrm');
+  });
+});
+
+describe('ship ultimates', () => {
+  function enemyNear(g, hp = 20) {
+    g.enemies.push(minEnemy(g.player.x + 100, g.player.y, hp));
+    const e = g.enemies[g.enemies.length - 1];
+    e.maxHealth = Math.max(hp, e.maxHealth);
+  }
+
+  it('spectre rift slows enemies', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre');
+    enemyNear(g);
+    g.shockWave();
+    expect(g.enemies[0]?.slowTimer).toBeGreaterThan(0);
+  });
+
+  it('juggernaut slam clears weak enemies', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('juggernaut');
+    enemyNear(g, 5);
+    g.shockWave();
+    expect(g.enemies.length).toBe(0);
+  });
+
+  it('warden restoration heals', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('warden');
+    g.player.health = 50;
+    g.shockWave();
+    expect(g.player.health).toBe(85);
+  });
+});
+
+describe('ship passives', () => {
+  it('vanguard earns bonus score', () => {
+    const { g } = makeGame(); // vanguard by default
+    g.enemies.push(minEnemy());
+    g.killEnemy(g.enemies.length - 1);
+    expect(g.score).toBeGreaterThan(100);
+    expect(g.score).toBeLessThan(120);
+  });
+
+  it('juggernaut plating reduces damage', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('juggernaut');
+    g.damagePlayer(10);
+    expect(g.player.health).toBeCloseTo(143);
+  });
+
+  it('spectre executes weakened enemies', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre');
+    g.enemies.push(minEnemy(200, 200, 10));
+    const e = g.enemies[g.enemies.length - 1];
+    e.maxHealth = 40; // 10/40 = at the 25% threshold
+    g.damageEnemy(g.enemies.length - 1, 4);
+    expect(e.health).toBe(2); // doubled to 8
+  });
+
+  it('warden pickups are stronger', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('warden');
+    g.player.health = 50;
+    g.dropPickup(g.player.x, g.player.y, 'repair');
+    g.updatePickups();
+    expect(g.player.health).toBe(95);
   });
 });
 

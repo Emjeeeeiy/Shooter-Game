@@ -2,10 +2,12 @@ import { onBeforeUnmount, onMounted, reactive, ref, shallowRef } from 'vue';
 import { Game, createHudState } from '../game/engine.js';
 import { draw, drawMinimap } from '../game/renderer.js';
 import { sfx } from '../game/audio.js';
-import { MINIMAP_SIZE, VIEW_HEIGHT, VIEW_WIDTH } from '../game/constants.js';
+import { MINIMAP_SIZE, VIEW_HEIGHT, VIEW_WIDTH, WORLD_HEIGHT, WORLD_WIDTH } from '../game/constants.js';
 
 const STEP_MS = 1000 / 60;
 const MAX_STEPS = 5;
+// Camera zoom: 1.0 = baseline view. Raise to see less world but bigger.
+const ZOOM = 1.0;
 
 /**
  * Owns the engine, the single animation frame loop, and input wiring.
@@ -22,6 +24,10 @@ export function useGame(settings) {
   const minimapRef = ref(null);
   const game = shallowRef(null);
 
+  // Logical viewport in world units. Zoom stays 1:1 — bigger screens simply
+  // see more of the world, so the ship and enemies never shrink.
+  const view = reactive({ w: VIEW_WIDTH, h: VIEW_HEIGHT });
+
   let ctx = null;
   let minimapCtx = null;
   let frame = 0;
@@ -33,6 +39,7 @@ export function useGame(settings) {
   let sequence = 0;
   let fpsFrames = 0;
   let fpsLast = 0;
+  let ro = null;
 
   function applyAudioSettings() {
     if (!settings) return;
@@ -63,8 +70,8 @@ export function useGame(settings) {
   }
 
   /**
-   * Size the backing store to the device pixel ratio while keeping the drawing
-   * code in logical 1200x700 space.
+   * Backing store matches the displayed CSS size (times DPR) while drawing
+   * stays in logical view units — crisp at any window or fullscreen size.
    */
   function scaleCanvas() {
     const canvas = canvasRef.value;
@@ -72,10 +79,13 @@ export function useGame(settings) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     if (canvas) {
-      canvas.width = VIEW_WIDTH * dpr;
-      canvas.height = VIEW_HEIGHT * dpr;
+      const rect = canvas.getBoundingClientRect();
+      const cssW = Math.max(1, Math.round(rect.width));
+      const cssH = Math.max(1, Math.round(rect.height));
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
       ctx = canvas.getContext('2d');
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(canvas.width / view.w, 0, 0, canvas.height / view.h, 0, 0);
     }
     if (minimap) {
       minimap.width = MINIMAP_SIZE * dpr;
@@ -83,6 +93,41 @@ export function useGame(settings) {
       minimapCtx = minimap.getContext('2d');
       minimapCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
+  }
+
+  /**
+   * Fit the logical viewport to the stage box at fixed zoom. The camera sees
+   * fewer world units than the baseline, so everything renders bigger;
+   * larger screens simply reveal a bit more around the edges.
+   */
+  function fitView() {
+    const canvas = canvasRef.value;
+    if (!canvas) return;
+    const wrap = canvas.parentElement;
+    if (!wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const aspect = rect.width / rect.height;
+    const baseAspect = VIEW_WIDTH / VIEW_HEIGHT;
+    let w;
+    let h;
+    if (aspect >= baseAspect) {
+      h = VIEW_HEIGHT;
+      w = Math.min(WORLD_WIDTH, Math.round(VIEW_HEIGHT * aspect));
+    } else {
+      w = VIEW_WIDTH;
+      h = Math.min(WORLD_HEIGHT, Math.round(VIEW_WIDTH / aspect));
+    }
+    w = Math.max(600, Math.min(WORLD_WIDTH, Math.round(w / ZOOM)));
+    h = Math.max(400, Math.min(WORLD_HEIGHT, Math.round(h / ZOOM)));
+
+    if (Math.abs(w - view.w) > 1 || Math.abs(h - view.h) > 1) {
+      view.w = w;
+      view.h = h;
+      game.value?.setView(w, h);
+    }
+    scaleCanvas();
   }
 
   function setMinimapEl(el) {
@@ -172,8 +217,8 @@ export function useGame(settings) {
     if (!rect.width || !rect.height) return;
 
     game.value.setPointer(
-      (event.clientX - rect.left) * (VIEW_WIDTH / rect.width),
-      (event.clientY - rect.top) * (VIEW_HEIGHT / rect.height),
+      (event.clientX - rect.left) * (view.w / rect.width),
+      (event.clientY - rect.top) * (view.h / rect.height),
     );
   }
 
@@ -207,19 +252,21 @@ export function useGame(settings) {
     if (!canvas || !game.value) return;
     const rect = canvas.getBoundingClientRect();
     game.value.setPointer(
-      (x - rect.left) * (VIEW_WIDTH / rect.width),
-      (y - rect.top) * (VIEW_HEIGHT / rect.height),
+      (x - rect.left) * (view.w / rect.width),
+      (y - rect.top) * (view.h / rect.height),
     );
   }
 
   // --- public actions -------------------------------------------------------
 
-  const start = () => {
+  const start = (characterId, seed) => {
     sfx.unlock();
     applyAudioSettings();
     sfx.play('click');
-    game.value?.start();
+    game.value?.start(characterId, seed);
   };
+  const setCharacter = (id) => game.value?.setCharacter(id);
+  const setPilotName = (name) => game.value?.setPilotName(name);
   const stop = () => game.value?.stop();
   const togglePause = () => game.value?.togglePause();
   const doDash = () => {
@@ -229,17 +276,25 @@ export function useGame(settings) {
   const doMissiles = () => game.value?.fireMissiles();
   const doShock = () => game.value?.shockWave();
   const setFire = (held) => game.value?.setFireHeld(held);
+  const doInject = (type, count) => game.value?.injectEnemies(type, count);
+  const doGift = () => game.value?.giftDrop();
 
   onMounted(() => {
     game.value = new Game(hud, emit);
     applyAudioSettings();
-    scaleCanvas();
+    fitView();
+
+    if (typeof ResizeObserver !== 'undefined' && canvasRef.value?.parentElement) {
+      ro = new ResizeObserver(() => fitView());
+      ro.observe(canvasRef.value.parentElement);
+    }
 
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
     window.addEventListener('mouseup', releaseFire);
-    window.addEventListener('resize', scaleCanvas);
+    window.addEventListener('resize', fitView);
+    document.addEventListener('fullscreenchange', fitView);
     document.addEventListener('visibilitychange', onVisibility);
 
     previous = performance.now();
@@ -257,8 +312,10 @@ export function useGame(settings) {
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
     window.removeEventListener('mouseup', releaseFire);
-    window.removeEventListener('resize', scaleCanvas);
+    window.removeEventListener('resize', fitView);
+    document.removeEventListener('fullscreenchange', fitView);
     document.removeEventListener('visibilitychange', onVisibility);
+    if (ro) ro.disconnect();
   });
 
   return {
@@ -267,15 +324,20 @@ export function useGame(settings) {
     notice,
     shake,
     fps,
+    view,
     canvasRef,
     minimapRef,
     start,
     stop,
     togglePause,
+    setCharacter,
+    setPilotName,
     doDash,
     doMissiles,
     doShock,
     setFire,
+    doInject,
+    doGift,
     setMinimapEl,
     onPointerMove,
     onPointerDown,

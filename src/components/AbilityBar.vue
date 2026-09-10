@@ -26,7 +26,7 @@ const abilities = computed(() => [
   },
   {
     key: 'E',
-    name: 'Shock',
+    name: props.hud.ultimateName ?? 'Shock',
     icon: 'shock',
     color: 'text-shock',
     ready: props.hud.shockCooldown === 0,

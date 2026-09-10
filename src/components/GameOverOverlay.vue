@@ -6,9 +6,10 @@ const props = defineProps({
   wave: { type: Number, required: true },
   stats: { type: Object, default: null },
   isBest: { type: Boolean, default: false },
+  race: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['save', 'restart']);
+const emit = defineEmits(['save', 'restart', 'lobby', 'standings']);
 
 const name = ref('Pilot');
 const saved = ref(false);
@@ -102,6 +103,21 @@ function save() {
             Retry
           </button>
         </div>
+        <button
+          v-if="race"
+          type="button"
+          class="mt-2 w-full rounded-lg bg-skill/15 px-4 py-2.5 text-sm font-semibold text-skill transition-colors hover:bg-skill/25"
+          @click="$emit('standings')"
+        >
+          Room standings
+        </button>
+        <button
+          type="button"
+          class="mt-2 w-full rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-200"
+          @click="$emit('lobby')"
+        >
+          ← Change ship
+        </button>
       </form>
     </div>
   </div>

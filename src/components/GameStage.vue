@@ -1,22 +1,30 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useGame } from '../composables/useGame.js';
 import { useLeaderboard } from '../composables/useLeaderboard.js';
 import { useSettings } from '../composables/useSettings.js';
-import { VIEW_HEIGHT, VIEW_WIDTH, energy as ENERGY, player as PLAYER } from '../game/constants.js';
+import { energy as ENERGY } from '../game/constants.js';
 import { sfx } from '../game/audio.js';
+import { music } from '../game/music.js';
+import { bumpCounter, updateLiveScore, useRoom as useRaceRoom } from '../composables/useRoom.js';
 import AbilityBar from './AbilityBar.vue';
 import Banner from './Banner.vue';
 import GameOverOverlay from './GameOverOverlay.vue';
 import Hud from './Hud.vue';
 import Minimap from './Minimap.vue';
 import PauseOverlay from './PauseOverlay.vue';
-import SettingsPanel from './SettingsPanel.vue';
-import StartOverlay from './StartOverlay.vue';
+import RacePanel from './RacePanel.vue';
 import StatBar from './StatBar.vue';
 import TouchControls from './TouchControls.vue';
 
-const { settings, toggleMute, setVolume, toggleShake, toggleFps } = useSettings();
+const props = defineProps({
+  characterId: { type: String, default: 'vanguard' },
+  pilotName: { type: String, default: 'Pilot' },
+  race: { type: Object, default: null }, // { code, uid, name, seed, mode }
+});
+const emit = defineEmits(['lobby', 'race-finish', 'room', 'run-saved']);
+
+const { settings, toggleMute, toggleMusic } = useSettings();
 
 const {
   hud,
@@ -32,6 +40,9 @@ const {
   doMissiles,
   doShock,
   setFire,
+  setPilotName,
+  doInject,
+  doGift,
   setMinimapEl,
   onPointerMove,
   onPointerDown,
@@ -45,18 +56,127 @@ const willBeBest = computed(() => hud.gameOver && isBest(hud.finalScore));
 
 function onSave(name) {
   save(name, hud.finalScore, hud.finalWave, hud.finalStats ?? {});
-  // Fall back to the briefing screen, matching the original flow.
+  emit('run-saved', { name, score: hud.finalScore, wave: hud.finalWave, stats: hud.finalStats ?? {} });
   hud.gameOver = false;
 }
 
-function onQuitToBriefing() {
+// --- multiplayer race: live score broadcast + final submit ------------------
+let finishSent = false;
+let lastLiveSent = 0;
+
+watch(
+  () => hud.running,
+  (running) => {
+    if (running) {
+      finishSent = false;
+      lastLiveSent = 0;
+    }
+  },
+);
+
+watch(
+  () => hud.score,
+  (score) => {
+    if (!props.race || !hud.running || hud.gameOver) return;
+    const now = Date.now();
+    if (now - lastLiveSent < 2000) return;
+    lastLiveSent = now;
+    updateLiveScore(props.race.code, props.race.uid, {
+      score,
+      wave: hud.wave,
+      name: props.race.name,
+    }).catch(() => {});
+  },
+);
+
+watch(
+  () => hud.gameOver,
+  (over) => {
+    if (over && props.race && !finishSent) {
+      finishSent = true;
+      emit('race-finish', {
+        score: hud.finalScore,
+        wave: hud.finalWave,
+        stats: hud.finalStats ?? {},
+      });
+    }
+  },
+);
+
+// --- versus sabotage / arcade gifts ------------------------------------------
+const { room: raceRoom } = useRaceRoom(() => props.race?.code ?? '');
+const lastMilestone = ref(0);
+const lastIncoming = ref(0);
+const lastGift = ref(0);
+
+const rivalIds = computed(() => {
+  if (!props.race) return [];
+  return Object.keys(raceRoom.value?.members ?? {}).filter((id) => id !== props.race.uid);
+});
+
+// Versus: every 5 kills sends a charger at each rival.
+watch(
+  () => hud.kills,
+  (kills) => {
+    if (!props.race || props.race.mode !== 'versus' || !hud.running || hud.gameOver) return;
+    const m = Math.floor((kills ?? 0) / 5);
+    if (m <= lastMilestone.value) return;
+    lastMilestone.value = m;
+    for (const oid of rivalIds.value) {
+      bumpCounter(props.race.code, oid, 'incoming').catch(() => {});
+    }
+  },
+);
+
+// Versus: absorb incoming sabotage as extra chargers.
+watch(
+  () => raceRoom.value?.live?.[props.race?.uid ?? '']?.incoming,
+  (n) => {
+    if (!props.race || props.race.mode !== 'versus') return;
+    const count = Number(n) || 0;
+    if (count <= lastIncoming.value) return;
+    const diff = Math.min(3, count - lastIncoming.value);
+    lastIncoming.value = count;
+    doInject('CHARGER', diff);
+  },
+);
+
+// Arcade: a boss kill (wave crossing a multiple of 5) gifts repairs to mates.
+watch(
+  () => hud.wave,
+  (w, prev) => {
+    if (!props.race || props.race.mode !== 'arcade') return;
+    if (typeof prev === 'number' && prev % 5 === 0 && w > prev) {
+      for (const tid of rivalIds.value) {
+        bumpCounter(props.race.code, tid, 'gift').catch(() => {});
+      }
+    }
+  },
+);
+
+// Arcade: absorb teammate gifts as repair drops.
+watch(
+  () => raceRoom.value?.live?.[props.race?.uid ?? '']?.gift,
+  (n) => {
+    if (!props.race || props.race.mode !== 'arcade') return;
+    const count = Number(n) || 0;
+    if (count <= lastGift.value) return;
+    lastGift.value = count;
+    doGift();
+  },
+);
+
+function onLobby() {
   stop();
-  hud.gameOver = false;
+  emit('lobby');
 }
 
 function syncAudio() {
   sfx.setMuted(settings.muted);
   sfx.setVolume(settings.volume);
+  music.setMuted(settings.muted);
+  music.setVolume(settings.volume);
+  music.setEnabled(settings.music);
 }
 
 function onMuteEvent() {
@@ -64,23 +184,21 @@ function onMuteEvent() {
   syncAudio();
 }
 
+function onToggleMusic() {
+  toggleMusic();
+  music.setEnabled(settings.music);
+  sfx.play('click');
+}
+
 onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
+  setPilotName(props.pilotName);
+  start(props.characterId, props.race?.seed);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
 });
-
-function onVolume(v) {
-  setVolume(v);
-  syncAudio();
-}
-function onToggleMute() {
-  toggleMute();
-  syncAudio();
-  sfx.play('click');
-}
 
 // Touch aim: drag on the canvas aims; FIRE button holds fire.
 function onTouchAimFire(e) {
@@ -99,19 +217,17 @@ const shakeClass = computed(() => {
 </script>
 
 <template>
-  <div class="w-full max-w-[1200px]">
-    <div class="mb-3 flex items-center justify-between gap-3">
-      <SettingsPanel
-        :settings="settings"
-        @toggle-mute="onToggleMute"
-        @volume="onVolume"
-        @toggle-shake="toggleShake"
-        @toggle-fps="toggleFps"
-      />
+  <div class="flex h-full w-full min-w-0 flex-col">
+    <div class="flex items-center justify-between gap-3 px-4 py-2">
+      <div class="flex min-w-0 items-center gap-2 text-[12px]">
+        <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: hud.characterColor }" />
+        <span class="truncate font-medium text-zinc-300">{{ hud.characterName }}</span>
+        <span class="truncate text-zinc-500">· {{ pilotName }}</span>
+      </div>
       <button
         v-if="hud.running && !hud.gameOver"
         type="button"
-        class="panel px-3 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:text-zinc-100"
+        class="panel shrink-0 px-3 py-1.5 text-[12px] font-medium text-zinc-400 transition-colors hover:text-zinc-100"
         @click="togglePause"
       >
         {{ hud.paused ? 'Resume' : 'Pause' }} <kbd class="ml-1">P</kbd>
@@ -119,9 +235,8 @@ const shakeClass = computed(() => {
     </div>
 
     <div
-      class="relative w-full overflow-hidden rounded-2xl border border-white/10 bg-surface select-none"
+      class="relative min-h-0 w-full flex-1 overflow-hidden bg-surface select-none"
       :class="shakeClass"
-      :style="{ aspectRatio: `${VIEW_WIDTH} / ${VIEW_HEIGHT}` }"
     >
       <canvas
         ref="canvasRef"
@@ -140,7 +255,7 @@ const shakeClass = computed(() => {
         </div>
 
         <div class="absolute bottom-4 left-4 w-40 sm:w-48">
-          <StatBar label="Integrity" :value="hud.health" :max="PLAYER.maxHealth" tone="danger" />
+          <StatBar label="Integrity" :value="hud.health" :max="hud.maxHealth" tone="danger" />
         </div>
 
         <div class="absolute bottom-4 left-1/2 hidden -translate-x-1/2 sm:block">
@@ -157,6 +272,10 @@ const shakeClass = computed(() => {
           />
         </div>
 
+        <div v-if="race" class="absolute top-4 left-1/2 hidden -translate-x-1/2 lg:block">
+          <RacePanel :code="race.code" :my-uid="race.uid" />
+        </div>
+
         <Banner :banner="banner" :notice="notice" />
       </div>
 
@@ -169,15 +288,15 @@ const shakeClass = computed(() => {
         @shock="doShock"
       />
 
-      <StartOverlay v-if="!hud.running && !hud.gameOver" @start="start" />
-
       <PauseOverlay
-        v-else-if="hud.paused && !hud.gameOver"
+        v-if="hud.paused && !hud.gameOver"
         :score="hud.score"
         :wave="hud.wave"
+        :music-on="settings.music"
         @resume="togglePause"
-        @restart="start"
-        @quit="onQuitToBriefing"
+        @restart="() => start(props.characterId, props.race?.seed)"
+        @quit="onLobby"
+        @toggle-music="onToggleMusic"
       />
 
       <GameOverOverlay
@@ -186,8 +305,11 @@ const shakeClass = computed(() => {
         :wave="hud.finalWave"
         :stats="hud.finalStats"
         :is-best="willBeBest"
+        :race="!!race"
         @save="onSave"
-        @restart="start"
+        @restart="() => start(props.characterId, props.race?.seed)"
+        @lobby="onLobby"
+        @standings="emit('room')"
       />
     </div>
   </div>

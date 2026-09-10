@@ -1,16 +1,9 @@
-import {
-  MINIMAP_SIZE,
-  VIEW_HEIGHT,
-  VIEW_WIDTH,
-  WORLD_HEIGHT,
-  WORLD_WIDTH,
-  palette,
-} from './constants.js';
+import { MINIMAP_SIZE, WORLD_HEIGHT, WORLD_WIDTH, palette } from './constants.js';
 
 const GRID = 100;
 
 const onScreen = (x, y, margin, camera) =>
-  x > -margin && x < VIEW_WIDTH + margin && y > -margin && y < VIEW_HEIGHT + margin;
+  x > -margin && x < camera.width + margin && y > -margin && y < camera.height + margin;
 
 /**
  * Flat, low-contrast rendering with culled draws and cheap glow.
@@ -20,9 +13,9 @@ const onScreen = (x, y, margin, camera) =>
 export function draw(ctx, game) {
   const { camera } = game;
 
-  ctx.clearRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+  ctx.clearRect(0, 0, camera.width, camera.height);
   ctx.fillStyle = palette.surface;
-  ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+  ctx.fillRect(0, 0, camera.width, camera.height);
 
   drawGrid(ctx, camera);
   drawBounds(ctx, camera);
@@ -43,13 +36,13 @@ function drawGrid(ctx, camera) {
   ctx.lineWidth = 1;
   ctx.beginPath();
 
-  for (let x = -camera.x % GRID; x < VIEW_WIDTH; x += GRID) {
+  for (let x = -camera.x % GRID; x < camera.width; x += GRID) {
     ctx.moveTo(Math.round(x) + 0.5, 0);
-    ctx.lineTo(Math.round(x) + 0.5, VIEW_HEIGHT);
+    ctx.lineTo(Math.round(x) + 0.5, camera.height);
   }
-  for (let y = -camera.y % GRID; y < VIEW_HEIGHT; y += GRID) {
+  for (let y = -camera.y % GRID; y < camera.height; y += GRID) {
     ctx.moveTo(0, Math.round(y) + 0.5);
-    ctx.lineTo(VIEW_WIDTH, Math.round(y) + 0.5);
+    ctx.lineTo(camera.width, Math.round(y) + 0.5);
   }
   ctx.stroke();
 }
@@ -68,7 +61,7 @@ function drawObstacles(ctx, { obstacles, camera }) {
   for (const o of obstacles) {
     const x = o.x - camera.x;
     const y = o.y - camera.y;
-    if (x + o.width < 0 || x > VIEW_WIDTH || y + o.height < 0 || y > VIEW_HEIGHT) continue;
+    if (x + o.width < 0 || x > camera.width || y + o.height < 0 || y > camera.height) continue;
 
     ctx.fillRect(x, y, o.width, o.height);
     ctx.strokeRect(x + 0.5, y + 0.5, o.width - 1, o.height - 1);
@@ -132,13 +125,15 @@ function drawParticles(ctx, { particles, camera }) {
   ctx.globalAlpha = 1;
 }
 
-function drawTrail(ctx, { player, camera }) {
+function drawTrail(ctx, game) {
+  const { player, camera } = game;
+  const color = game.character?.color ?? palette.player;
   for (const t of player.trail) {
     const x = t.x - camera.x;
     const y = t.y - camera.y;
     if (!onScreen(x, y, 30, camera)) continue;
     ctx.globalAlpha = (t.life / 20) * 0.5;
-    ctx.fillStyle = palette.player;
+    ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, player.radius * 0.55, 0, Math.PI * 2);
     ctx.fill();
@@ -255,7 +250,7 @@ function drawEnemies(ctx, { enemies, camera }) {
   ctx.globalAlpha = 1;
 }
 
-function tracePath(ctx, shape, x, y, r, e = null) {
+export function tracePath(ctx, shape, x, y, r, e = null) {
   ctx.beginPath();
 
   if (shape === 'hexagon') {
@@ -313,6 +308,25 @@ function tracePath(ctx, shape, x, y, r, e = null) {
       else ctx.lineTo(px, py);
     }
     ctx.closePath();
+  } else if (shape === 'wyrm') {
+    // Elongated serpent dart for the Star-Wyrm.
+    const W = [
+      [2, 0],
+      [0.5, -0.55],
+      [-1.2, -0.4],
+      [-1.9, -0.9],
+      [-1.5, 0],
+      [-1.9, 0.9],
+      [-1.2, 0.4],
+      [0.5, 0.55],
+    ];
+    for (let i = 0; i < W.length; i += 1) {
+      const px = x + W[i][0] * r * 0.62;
+      const py = y + W[i][1] * r * 0.62;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
   } else {
     ctx.moveTo(x, y - r);
     ctx.lineTo(x + r, y);
@@ -326,7 +340,9 @@ function drawPlayer(ctx, game) {
   const { player, camera, activeBuff } = game;
   const x = player.x - camera.x;
   const y = player.y - camera.y;
+  const shipId = game.characterId ?? 'vanguard';
 
+  const charColor = game.character?.color ?? palette.player;
   const body =
     player.flash > 0
       ? palette.flash
@@ -336,7 +352,7 @@ function drawPlayer(ctx, game) {
           ? palette.skill
           : activeBuff === 'MAGNET'
             ? palette.magnet
-            : palette.player;
+            : charColor;
 
   // I-frame blink
   if (player.iframes > 0 && Math.floor(player.iframes / 4) % 2 === 0) ctx.globalAlpha = 0.45;
@@ -358,40 +374,128 @@ function drawPlayer(ctx, game) {
   ctx.shadowColor = body;
   ctx.shadowBlur = 12;
   ctx.fillStyle = body;
-  ctx.beginPath();
-  ctx.moveTo(22, 0);
-  ctx.lineTo(-13, 13);
-  ctx.lineTo(-8, 0);
-  ctx.lineTo(-13, -13);
-  ctx.closePath();
+  traceShip(ctx, shipId);
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  ctx.fillStyle = palette.surface;
-  ctx.beginPath();
-  ctx.arc(-9, 0, 5, 0, Math.PI * 2);
-  ctx.fill();
+  drawShipDetails(ctx, shipId);
 
   ctx.restore();
+  if (game.pilotName) {
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#e4e4e7';
+    ctx.font = '11px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(game.pilotName, x, y - player.radius - 14);
+  }
   ctx.globalAlpha = 1;
+}
+
+// Unique silhouette per hull. Nose points +x and every footprint stays
+// within ~±27 units, so all ships read the same size and hitboxes never lie.
+export function traceShip(ctx, shipId) {
+  ctx.beginPath();
+  if (shipId === 'spectre') {
+    // Needle: long, razor-thin assassin dart with forked tail.
+    ctx.moveTo(27, 0);
+    ctx.lineTo(-9, 5);
+    ctx.lineTo(-14, 9);
+    ctx.lineTo(-11, 0);
+    ctx.lineTo(-14, -9);
+    ctx.lineTo(-9, -5);
+    ctx.closePath();
+  } else if (shipId === 'juggernaut') {
+    // Bruiser: blunt armored hexagon.
+    ctx.moveTo(15, 0);
+    ctx.lineTo(7, -11);
+    ctx.lineTo(-11, -14);
+    ctx.lineTo(-16, -6);
+    ctx.lineTo(-16, 6);
+    ctx.lineTo(-11, 14);
+    ctx.lineTo(7, 11);
+    ctx.closePath();
+  } else if (shipId === 'warden') {
+    // Support: round hull, twin side pods, nose spike (separate subpaths).
+    ctx.moveTo(11, 0);
+    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+    ctx.moveTo(4.5, -12);
+    ctx.arc(0, -12, 4.5, 0, Math.PI * 2);
+    ctx.moveTo(4.5, 12);
+    ctx.arc(0, 12, 4.5, 0, Math.PI * 2);
+    ctx.moveTo(22, 0);
+    ctx.lineTo(8, -3);
+    ctx.lineTo(8, 3);
+    ctx.closePath();
+  } else {
+    // Vanguard: classic interceptor arrow.
+    ctx.moveTo(22, 0);
+    ctx.lineTo(-13, 13);
+    ctx.lineTo(-8, 0);
+    ctx.lineTo(-13, -13);
+    ctx.closePath();
+  }
+}
+
+// Per-ship cockpit / armor details in dark contrast plus body-color lights.
+function drawShipDetails(ctx, shipId) {
+  ctx.fillStyle = palette.surface;
+  if (shipId === 'spectre') {
+    ctx.beginPath();
+    ctx.ellipse(6, 0, 6, 2.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = palette.missile;
+    ctx.beginPath();
+    ctx.arc(-11, 3.5, 1.8, 0, Math.PI * 2);
+    ctx.arc(-11, -3.5, 1.8, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'juggernaut') {
+    ctx.beginPath();
+    ctx.arc(-3, 0, 5.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = palette.surface;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-11, -13);
+    ctx.lineTo(-11, 13);
+    ctx.stroke();
+    ctx.fillStyle = palette.danger;
+    ctx.beginPath();
+    ctx.arc(8, 0, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (shipId === 'warden') {
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = palette.repair;
+    ctx.beginPath();
+    ctx.arc(0, -12, 2, 0, Math.PI * 2);
+    ctx.arc(0, 12, 2, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.arc(-9, 0, 5, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawLowHpVignette(ctx, game) {
   const hp = game.player.health / 100;
   if (hp > 0.35) return;
+  const { width, height } = game.camera;
   const a = (0.35 - hp) * 1.6;
   const grad = ctx.createRadialGradient(
-    VIEW_WIDTH / 2, VIEW_HEIGHT / 2, VIEW_HEIGHT * 0.36,
-    VIEW_WIDTH / 2, VIEW_HEIGHT / 2, VIEW_HEIGHT * 0.75,
+    width / 2, height / 2, height * 0.36,
+    width / 2, height / 2, height * 0.75,
   );
   grad.addColorStop(0, 'rgba(251,113,133,0)');
   grad.addColorStop(1, `rgba(251,113,133,${Math.min(0.45, a).toFixed(3)})`);
   ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
+  ctx.fillRect(0, 0, width, height);
 }
 
 export function drawMinimap(ctx, game) {
   const { camera, obstacles, enemies, missiles, pickups, player } = game;
+  const charColor = game.character?.color ?? palette.player;
   const sx = MINIMAP_SIZE / WORLD_WIDTH;
   const sy = MINIMAP_SIZE / WORLD_HEIGHT;
 
@@ -429,7 +533,7 @@ export function drawMinimap(ctx, game) {
     }
   }
 
-  ctx.fillStyle = player.isDashing ? palette.playerDash : palette.player;
+  ctx.fillStyle = player.isDashing ? palette.playerDash : charColor;
   ctx.beginPath();
   ctx.arc(player.x * sx, player.y * sy, 3, 0, Math.PI * 2);
   ctx.fill();

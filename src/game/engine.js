@@ -5,8 +5,9 @@ import {
   VIEW_HEIGHT,
   BUFFS,
   BUFF_DURATION,
+  BOSSES,
+  CHARACTERS,
   ENEMY_TYPES,
-  BOSS,
   MAX_PARTICLES,
   TICKS_PER_SECOND,
   bullet as BULLET,
@@ -56,6 +57,12 @@ export class Game {
     this.pointer = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
     this.fireHeld = false;
 
+    this.characterId = 'vanguard';
+    this.character = CHARACTERS.vanguard;
+    this.pilotName = '';
+    this.seed = 1;
+    this.rngState = 1;
+
     this.reset();
   }
 
@@ -75,7 +82,9 @@ export class Game {
       x: WORLD_WIDTH / 2,
       y: WORLD_HEIGHT / 2,
       radius: PLAYER.radius,
-      health: PLAYER.maxHealth,
+      speed: this.character.speed,
+      maxHealth: this.character.maxHealth,
+      health: this.character.maxHealth,
       angle: 0,
       trail: [],
       isDashing: false,
@@ -99,7 +108,7 @@ export class Game {
     // Tick-based cooldowns (remaining ticks). 0 = ready.
     this.missileCooldown = 0;
     this.shockCooldown = 0;
-    this.dashCharges = DASH.maxCharges;
+    this.dashCharges = this.dashMax();
     this.dashRecharge = 0;
 
     // Combo
@@ -114,6 +123,7 @@ export class Game {
     this.timeTicks = 0;
     this.damageTaken = 0;
     this.bossActive = false;
+    this.bossesSlain = 0;
 
     this.spawnTimer = 0;
     this.spawnInterval = SPAWN.baseInterval;
@@ -124,7 +134,12 @@ export class Game {
     this.syncHud();
   }
 
-  start() {
+  start(characterId, seed) {
+    if (characterId && CHARACTERS[characterId]) {
+      this.characterId = characterId;
+      this.character = CHARACTERS[characterId];
+    }
+    this.srand(seed ?? ((Date.now() % 2147483646) + 1));
     this.reset();
     this.running = true;
     this.paused = false;
@@ -140,6 +155,60 @@ export class Game {
     this.paused = false;
     this.hud.running = false;
     this.hud.paused = false;
+  }
+
+  setCharacter(id) {
+    if (!CHARACTERS[id]) return;
+    this.characterId = id;
+    this.character = CHARACTERS[id];
+    if (!this.running) {
+      this.player.speed = this.character.speed;
+      this.player.maxHealth = this.character.maxHealth;
+      this.player.health = this.character.maxHealth;
+      this.dashCharges = this.dashMax();
+      this.dashRecharge = 0;
+    }
+    this.syncHud();
+  }
+
+  dashMax() {
+    return this.character?.dashCharges ?? DASH.maxCharges;
+  }
+
+  setPilotName(name) {
+    this.pilotName = String(name ?? '').slice(0, 20);
+    this.syncHud();
+  }
+
+  /** Cooldown total in ticks for an ability, with ship + buff modifiers. */
+  abilityTotal(kind) {
+    if (kind === 'shock') return this.ultCooldown();
+    const mult = this.character?.missileCdMult ?? 1;
+    const scaled = Math.round(MISSILE.cooldownTicks * mult);
+    return this.activeBuff === 'SKILL' ? Math.round(scaled * 0.5) : scaled;
+  }
+
+  /** Ultimate cooldown in ticks, with ship + Skill-buff modifiers. */
+  ultCooldown() {
+    const base = this.character.ultimate?.cooldownTicks ?? SHOCK.cooldownTicks;
+    return this.activeBuff === 'SKILL' ? Math.round(base * 0.5) : base;
+  }
+
+  /** Difficulty tier: 0 for waves 1-10, rising every 10 waves. */
+  tier() {
+    return Math.floor((this.wave - 1) / 10);
+  }
+
+  comboWindow() {
+    return Math.round(COMBO.windowTicks * (this.character?.comboWindowMult ?? 1));
+  }
+
+  spawnIntervalFor(wave) {
+    const tier = Math.floor((wave - 1) / 10);
+    return Math.max(
+      SPAWN.minInterval,
+      SPAWN.baseInterval - wave * SPAWN.intervalStepPerWave - tier * SPAWN.intervalStepPerTier,
+    );
   }
 
   pause() {
@@ -161,6 +230,21 @@ export class Game {
 
   hitStop(ticks = 3) {
     this.hitStopTicks = Math.max(this.hitStopTicks, ticks);
+  }
+
+  /** Seeded RNG (mulberry32) so rooms can share identical battlefields. */
+  srand(seed) {
+    this.seed = seed >>> 0 || 1;
+    this.rngState = this.seed;
+  }
+
+  /** Gameplay randomness. Visual-only particles keep using Math.random. */
+  random() {
+    this.rngState |= 0;
+    this.rngState = (this.rngState + 0x6d2b79f5) | 0;
+    let t = Math.imul(this.rngState ^ (this.rngState >>> 15), 1 | this.rngState);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
   gameOver() {
@@ -195,10 +279,10 @@ export class Game {
     while (this.obstacles.length < SPAWN.obstacleCount && attempts < 200) {
       attempts += 1;
       const rect = {
-        x: Math.random() * (WORLD_WIDTH - 200) + 100,
-        y: Math.random() * (WORLD_HEIGHT - 200) + 100,
-        width: Math.random() * 100 + 50,
-        height: Math.random() * 100 + 50,
+        x: this.random() * (WORLD_WIDTH - 200) + 100,
+        y: this.random() * (WORLD_HEIGHT - 200) + 100,
+        width: this.random() * 100 + 50,
+        height: this.random() * 100 + 50,
       };
 
       const nearestX = clamp(cx, rect.x, rect.x + rect.width);
@@ -276,8 +360,18 @@ export class Game {
 
   /** Pointer position in view (canvas-logical) coordinates. */
   setPointer(x, y) {
-    this.pointer.x = clamp(x, 0, VIEW_WIDTH);
-    this.pointer.y = clamp(y, 0, VIEW_HEIGHT);
+    this.pointer.x = clamp(x, 0, this.camera.width);
+    this.pointer.y = clamp(y, 0, this.camera.height);
+  }
+
+  /** Dynamic viewport for responsive play. World units stay fixed. */
+  setView(w, h) {
+    this.camera.width = clamp(Math.round(w), 600, WORLD_WIDTH);
+    this.camera.height = clamp(Math.round(h), 400, WORLD_HEIGHT);
+    this.pointer.x = clamp(this.pointer.x, 0, this.camera.width);
+    this.pointer.y = clamp(this.pointer.y, 0, this.camera.height);
+    this.updateCamera();
+    this.syncHud();
   }
 
   // --- abilities ------------------------------------------------------------
@@ -293,14 +387,16 @@ export class Game {
   fire() {
     if (!this.running || this.paused) return;
 
+    const cost = this.character?.energyCost ?? BULLET.energyCost;
     if (this.activeBuff !== 'AMMO') {
-      if (this.energy < BULLET.energyCost) return;
-      this.energy -= BULLET.energyCost;
+      if (this.energy < cost) return;
+      this.energy -= cost;
     }
 
     const target = this.worldPointer;
     const angle = Math.atan2(target.y - this.player.y, target.x - this.player.x);
     const buffed = this.activeBuff === 'SKILL';
+    const baseDmg = this.character?.bulletDamage ?? 1;
     const count = buffed ? 3 : 1;
     const spread = buffed ? 0.2 : 0;
 
@@ -314,7 +410,7 @@ export class Game {
         radius: BULLET.radius,
         color: buffed ? palette.skill : palette.bullet,
         life: BULLET.life,
-        damage: buffed ? 2 : 1,
+        damage: buffed ? baseDmg * 2 : baseDmg,
       });
     }
     this.shotsFired += 1;
@@ -356,7 +452,7 @@ export class Game {
   fireMissiles() {
     if (!this.running || this.paused) return;
     if (this.missileCooldown > 0) return;
-    this.missileCooldown = this.cooldownFor(MISSILE.cooldownTicks);
+    this.missileCooldown = this.abilityTotal('missile');
 
     const buffed = this.activeBuff === 'SKILL';
     const count = buffed ? MISSILE.countBuffed : MISSILE.count;
@@ -397,40 +493,104 @@ export class Game {
     );
   }
 
+  /** E key: fires the selected ship's ultimate. */
   shockWave() {
     if (!this.running || this.paused) return;
     if (this.shockCooldown > 0) return;
-    this.shockCooldown = this.cooldownFor(SHOCK.cooldownTicks);
+    const ult = this.character.ultimate?.id ?? 'shock';
+    if (ult === 'rift') return this.ultRift();
+    if (ult === 'slam') return this.ultSlam();
+    if (ult === 'restore') return this.ultRestore();
+    return this.ultShock();
+  }
 
+  /**
+   * Shared radial strike: damages + knocks back every enemy in range with
+   * falloff. Returns the number of enemies hit.
+   */
+  nova(maxRadius, baseDmg, knockback, color, burstN = 8, burstSpeed = 8) {
+    let hits = 0;
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
+      if (d > maxRadius) continue;
+      hits += 1;
+      const falloff = 1 - (d / maxRadius) * 0.5;
+      const ka = Math.atan2(e.y - this.player.y, e.x - this.player.x);
+      e.x = clamp(e.x + Math.cos(ka) * knockback * falloff, e.radius, WORLD_WIDTH - e.radius);
+      e.y = clamp(e.y + Math.sin(ka) * knockback * falloff, e.radius, WORLD_HEIGHT - e.radius);
+      e.health -= Math.max(2, Math.round(baseDmg * falloff));
+      e.flash = 8;
+      this.burst(e.x, e.y, color, burstN, burstSpeed);
+      if (e.health <= 0) this.killEnemy(i, { viaShock: true });
+    }
+    return hits;
+  }
+
+  pushShockVisual() {
     this.shockWaves.push({
       x: this.player.x,
       y: this.player.y,
       radius: SHOCK.startRadius,
       life: SHOCK.life,
     });
+  }
 
-    // Balanced radial damage + knockback (no longer clears the whole field).
-    let hits = 0;
-    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
-      const e = this.enemies[i];
-      const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
-      if (d > SHOCK.maxRadius) continue;
-      hits += 1;
-      const falloff = 1 - (d / SHOCK.maxRadius) * 0.5;
-      const dmg = Math.max(2, Math.round(SHOCK.damage * falloff));
-      const ka = Math.atan2(e.y - this.player.y, e.x - this.player.x);
-      e.x = clamp(e.x + Math.cos(ka) * SHOCK.knockback * falloff, e.radius, WORLD_WIDTH - e.radius);
-      e.y = clamp(e.y + Math.sin(ka) * SHOCK.knockback * falloff, e.radius, WORLD_HEIGHT - e.radius);
-      e.health -= dmg;
-      e.flash = 8;
-      this.burst(e.x, e.y, palette.shock, 8, 8);
-      if (e.health <= 0) this.killEnemy(i, { viaShock: true });
-    }
-
+  // Vanguard: heavy radial damage + knockback.
+  ultShock() {
+    this.shockCooldown = this.ultCooldown();
+    this.pushShockVisual();
+    const hits = this.nova(SHOCK.maxRadius, SHOCK.damage, SHOCK.knockback, palette.shock);
     this.burst(this.player.x, this.player.y, palette.shock, 50, 15);
     this.emit('shake', { magnitude: hits > 6 ? 'big' : 'medium' });
     this.emit('sfx', { name: 'shock' });
     if (hits >= 5) this.hitStop(3);
+  }
+
+  // Spectre: lighter blast that slows everything it touches.
+  ultRift() {
+    this.shockCooldown = this.ultCooldown();
+    this.pushShockVisual();
+    let hits = 0;
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const e = this.enemies[i];
+      if (Math.hypot(e.x - this.player.x, e.y - this.player.y) > 450) continue;
+      hits += 1;
+      e.slowTimer = 300;
+      this.burst(e.x, e.y, palette.magnet, 6, 6);
+    }
+    hits = this.nova(450, 4, 14, palette.magnet) || hits;
+    this.burst(this.player.x, this.player.y, palette.magnet, 40, 12);
+    this.emit('notice', { text: 'Rift slows the swarm', tone: 'magnet' });
+    this.emit('shake', { magnitude: 'medium' });
+    this.emit('sfx', { name: 'shock' });
+    if (hits >= 5) this.hitStop(2);
+  }
+
+  // Juggernaut: devastating close-range slam.
+  ultSlam() {
+    this.shockCooldown = this.ultCooldown();
+    this.pushShockVisual();
+    const hits = this.nova(420, 10, 30, palette.missile, 12, 10);
+    this.burst(this.player.x, this.player.y, palette.missile, 60, 16);
+    this.emit('shake', { magnitude: 'big' });
+    this.emit('sfx', { name: 'shock' });
+    this.hitStop(5);
+    if (hits === 0) this.emit('notice', { text: 'Slam missed', tone: 'muted' });
+  }
+
+  // Warden: heal + recharge, burns nearby foes.
+  ultRestore() {
+    this.shockCooldown = this.ultCooldown();
+    this.pushShockVisual();
+    this.player.health = Math.min(this.player.maxHealth, this.player.health + 35);
+    this.energy = Math.min(ENERGY.max, this.energy + 50);
+    const hits = this.nova(550, 4, 14, palette.repair);
+    this.burst(this.player.x, this.player.y, palette.repair, 50, 12);
+    this.emit('notice', { text: '+35 integrity field', tone: 'repair' });
+    this.emit('shake', { magnitude: 'small' });
+    this.emit('sfx', { name: 'buff' });
+    if (hits >= 5) this.hitStop(2);
   }
 
   // --- spawning and scoring -------------------------------------------------
@@ -455,11 +615,14 @@ export class Game {
   }
 
   pickType() {
-    const roll = Math.random();
+    const roll = this.random();
+    // Tougher breeds unlock as waves climb — early game stays gentle.
+    const pool = Object.values(ENEMY_TYPES).filter((c) => this.wave >= (c.unlockWave ?? 1));
+    const total = pool.reduce((s, c) => s + c.spawnChance, 0) || 1;
     let type = ENEMY_TYPES.NORMAL;
     let cumulative = 0;
-    for (const candidate of Object.values(ENEMY_TYPES)) {
-      cumulative += candidate.spawnChance;
+    for (const candidate of pool) {
+      cumulative += candidate.spawnChance / total;
       if (roll <= cumulative) {
         type = candidate;
         break;
@@ -470,64 +633,78 @@ export class Game {
 
   spawnEnemy(forceType = null) {
     if (this.enemies.length >= SPAWN.maxEnemies) return;
-    const angle = Math.random() * Math.PI * 2;
+    const angle = this.random() * Math.PI * 2;
     const dist = Math.max(this.camera.width, this.camera.height) / 2 + 100;
     const x = clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD_WIDTH - 50);
     const y = clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD_HEIGHT - 50);
 
     const type = forceType ?? this.pickType();
-    const health = Math.min(SPAWN.maxHealth, type.health + Math.floor(this.wave / 3));
+    const tier = this.tier();
+    let health = Math.min(SPAWN.maxHealth, type.health + Math.floor(this.wave / 4) + tier);
+    let scoreMult = 1;
+    // Elites stalk higher tiers: tankier, worth more.
+    if (tier >= 2 && !forceType && this.random() < 0.06 + tier * 0.02) {
+      health = Math.min(SPAWN.maxHealth, health + 2);
+      scoreMult = 1.5;
+    }
 
     this.enemies.push({
       x,
       y,
-      radius: 12 + health * 4,
-      speed: Math.min(SPAWN.maxSpeed, type.speed + this.wave * 0.12 + Math.random() * 0.3),
+      radius: type.radius ?? 15,
+      speed: Math.min(SPAWN.maxSpeed, type.speed + this.wave * 0.08 + tier * 0.3 + this.random() * 0.3),
       health,
       maxHealth: health,
       color: type.color,
       shape: type.shape,
-      pulse: Math.random() * Math.PI * 2,
+      pulse: this.random() * Math.PI * 2,
       type,
       buff: type.buff,
       drop: type.drop ?? null,
       behavior: type.behavior ?? 'chase',
-      seed: Math.random() * 1000,
+      seed: this.random() * 1000,
       state: 'chase',
       stateTimer: 0,
       lockAngle: 0,
       flash: 0,
+      slowTimer: 0,
+      scoreMult,
+      elite: scoreMult > 1,
       isBoss: false,
     });
   }
 
   spawnBoss() {
+    const def = BOSSES[this.bossesSlain % BOSSES.length];
     const x = clamp(this.player.x + 500, 100, WORLD_WIDTH - 100);
     const y = clamp(this.player.y - 300, 100, WORLD_HEIGHT - 100);
-    const health = BOSS.baseHealth + this.wave * BOSS.healthPerWave;
+    const health = def.baseHealth + this.bossesSlain * def.healthPerBoss;
     this.enemies.push({
       x,
       y,
-      radius: BOSS.radius,
-      speed: BOSS.speed,
+      radius: def.radius,
+      speed: def.speed,
       health,
       maxHealth: health,
-      color: BOSS.color,
-      shape: BOSS.shape,
+      color: def.color,
+      shape: def.shape,
       pulse: 0,
-      type: { name: 'BOSS', score: BOSS.score },
+      type: { name: def.name.toUpperCase(), score: def.score },
       buff: null,
       drop: 'shower',
-      behavior: 'boss',
-      seed: Math.random() * 1000,
+      behavior: def.behavior,
+      seed: this.random() * 1000,
       state: 'chase',
-      stateTimer: BOSS.minionIntervalTicks,
+      stateTimer: def.minionInterval ?? 120,
       lockAngle: 0,
       flash: 0,
+      slowTimer: 0,
       isBoss: true,
+      boss: def,
     });
     this.bossActive = true;
-    this.emit('banner', { text: `Boss — Wave ${this.wave}`, tone: 'danger' });
+    this.emit('banner', { text: def.title, tone: 'danger' });
+    this.emit('notice', { text: def.note, tone: 'muted' });
     this.emit('sfx', { name: 'boss' });
     this.emit('shake', { magnitude: 'big' });
   }
@@ -535,6 +712,9 @@ export class Game {
   damageEnemy(index, dmg) {
     const e = this.enemies[index];
     if (!e) return;
+    // Spectre passive: executions hit twice as hard under the threshold.
+    const th = this.character?.executeThreshold ?? 0;
+    if (th > 0 && e.health <= e.maxHealth * th) dmg *= 2;
     e.health -= dmg;
     e.flash = 6;
     if (e.health <= 0) this.killEnemy(index);
@@ -549,8 +729,8 @@ export class Game {
       for (let k = 0; k < 2; k += 1) {
         if (this.enemies.length >= SPAWN.maxEnemies) break;
         this.enemies.push({
-          x: clamp(e.x + (Math.random() - 0.5) * 40, 30, WORLD_WIDTH - 30),
-          y: clamp(e.y + (Math.random() - 0.5) * 40, 30, WORLD_HEIGHT - 30),
+          x: clamp(e.x + (this.random() - 0.5) * 40, 30, WORLD_WIDTH - 30),
+          y: clamp(e.y + (this.random() - 0.5) * 40, 30, WORLD_HEIGHT - 30),
           radius: 14,
           speed: Math.min(SPAWN.maxSpeed, 1.4 + this.wave * 0.1),
           health: 1,
@@ -562,11 +742,40 @@ export class Game {
           buff: null,
           drop: null,
           behavior: 'chase',
-          seed: Math.random() * 1000,
+          seed: this.random() * 1000,
           state: 'chase',
           stateTimer: 0,
           lockAngle: 0,
           flash: 0,
+          isBoss: false,
+        });
+      }
+    }
+
+    // Hydra Matriarch bursts into chargers.
+    if (e.behavior === 'hydra' && e.isBoss) {
+      for (let k = 0; k < 3; k += 1) {
+        if (this.enemies.length >= SPAWN.maxEnemies) break;
+        this.enemies.push({
+          x: clamp(e.x + (this.random() - 0.5) * 90, 30, WORLD_WIDTH - 30),
+          y: clamp(e.y + (this.random() - 0.5) * 90, 30, WORLD_HEIGHT - 30),
+          radius: 16,
+          speed: Math.min(SPAWN.maxSpeed, ENEMY_TYPES.CHARGER.speed + 1),
+          health: 2,
+          maxHealth: 2,
+          color: ENEMY_TYPES.CHARGER.color,
+          shape: 'triangle',
+          pulse: 0,
+          type: ENEMY_TYPES.CHARGER,
+          buff: null,
+          drop: null,
+          behavior: 'charger',
+          seed: this.random() * 1000,
+          state: 'chase',
+          stateTimer: 60,
+          lockAngle: 0,
+          flash: 0,
+          slowTimer: 0,
           isBoss: false,
         });
       }
@@ -578,22 +787,24 @@ export class Game {
       this.dropPickup(e.x - 30, e.y, 'repair');
       this.dropPickup(e.x + 30, e.y, 'energy');
       this.dropPickup(e.x, e.y - 30, 'magnet');
-    } else if (!e.isBoss && Math.random() < 0.04) {
-      this.dropPickup(e.x, e.y, Math.random() < 0.5 ? 'energy' : 'repair');
+    } else if (!e.isBoss && this.random() < 0.04) {
+      this.dropPickup(e.x, e.y, this.random() < 0.5 ? 'energy' : 'repair');
     }
 
-    // Combo + score multiplier
+    // Combo + score multiplier (Veteran hulls stretch the window / payout).
     this.comboKills += 1;
-    this.comboTimer = COMBO.windowTicks;
+    this.comboTimer = this.comboWindow();
     this.multiplier = Math.min(COMBO.maxMultiplier, 1 + Math.floor(this.comboKills / COMBO.killsPerStep));
     this.maxMultiplier = Math.max(this.maxMultiplier, this.multiplier);
 
     this.burst(e.x, e.y, e.color, e.isBoss ? 60 : 25, e.isBoss ? 14 : 10);
     this.enemies.splice(index, 1);
-    this.score += e.type.score * e.maxHealth * this.multiplier;
+    this.score +=
+      e.type.score * e.maxHealth * this.multiplier * (e.scoreMult ?? 1) * (this.character?.scoreMult ?? 1);
     this.kills += 1;
     this.emit('sfx', { name: e.isBoss ? 'bossdie' : 'explosion' });
     if (e.isBoss) {
+      this.bossesSlain += 1;
       this.bossActive = this.enemies.some((x) => x.isBoss);
       this.hitStop(6);
       this.emit('shake', { magnitude: 'big' });
@@ -602,12 +813,16 @@ export class Game {
 
     if (this.kills % SPAWN.killsPerWave === 0) {
       this.wave += 1;
-      this.spawnInterval = Math.max(
-        SPAWN.minInterval,
-        SPAWN.baseInterval - this.wave * SPAWN.intervalStepPerWave,
-      );
-      if (this.wave % SPAWN.bossWaveEvery === 0) this.spawnBoss();
-      else {
+      this.spawnInterval = this.spawnIntervalFor(this.wave);
+      if (this.wave % SPAWN.bossWaveEvery === 0) {
+        this.spawnBoss();
+      } else if (this.wave % 10 === 1) {
+        // New threat tier every 10 waves: breather + warning.
+        this.player.health = Math.min(this.player.maxHealth, this.player.health + 25);
+        this.emit('banner', { text: `Threat ${this.tier() + 1}`, tone: 'danger' });
+        this.emit('notice', { text: '+25 integrity — hold the line', tone: 'repair' });
+        this.emit('sfx', { name: 'wave' });
+      } else {
         this.emit('banner', { text: `Wave ${this.wave}`, tone: 'accent' });
         this.emit('sfx', { name: 'wave' });
       }
@@ -617,10 +832,11 @@ export class Game {
   damagePlayer(amount, fromX = null, fromY = null) {
     const p = this.player;
     if (p.isDashing || p.iframes > 0 || !this.running || this.paused) return;
-    p.health -= amount;
+    const taken = amount * (this.character?.damageTakenMult ?? 1);
+    p.health -= taken;
     p.iframes = PLAYER.iframesTicks;
     p.flash = 10;
-    this.damageTaken += amount;
+    this.damageTaken += taken;
     // Reset combo on damage — risk/reward.
     this.comboKills = 0;
     this.comboTimer = 0;
@@ -659,15 +875,33 @@ export class Game {
     });
   }
 
+  /** Multiplayer versus: hostile reinforcements sent by an opponent. */
+  injectEnemies(typeName, count) {
+    const type = ENEMY_TYPES[typeName] ?? ENEMY_TYPES.NORMAL;
+    for (let i = 0; i < count; i += 1) this.spawnEnemy(type);
+    this.emit('notice', { text: 'Incoming hostiles!', tone: 'danger' });
+    this.emit('sfx', { name: 'lunge' });
+  }
+
+  /** Multiplayer arcade: a teammate shares supplies. */
+  giftDrop() {
+    this.dropPickup(this.player.x + 50, this.player.y - 20, 'repair');
+    this.emit('notice', { text: 'Squad gift: repairs inbound', tone: 'repair' });
+    this.emit('sfx', { name: 'pickup' });
+  }
+
   collectPickup(index) {
     const pk = this.pickups[index];
     if (!pk) return;
+    const pm = this.character?.pickupMult ?? 1; // Warden passive
     if (pk.kind === 'repair') {
-      this.player.health = Math.min(PLAYER.maxHealth, this.player.health + PICKUPS.repairAmount);
-      this.emit('notice', { text: `+${PICKUPS.repairAmount} Integrity`, tone: 'repair' });
+      const gain = Math.round(PICKUPS.repairAmount * pm);
+      this.player.health = Math.min(this.player.maxHealth, this.player.health + gain);
+      this.emit('notice', { text: `+${gain} Integrity`, tone: 'repair' });
     } else if (pk.kind === 'energy') {
-      this.energy = Math.min(ENERGY.max, this.energy + PICKUPS.energyAmount);
-      this.emit('notice', { text: `+${PICKUPS.energyAmount} Energy`, tone: 'ammo' });
+      const gain = Math.round(PICKUPS.energyAmount * pm);
+      this.energy = Math.min(ENERGY.max, this.energy + gain);
+      this.emit('notice', { text: `+${gain} Energy`, tone: 'ammo' });
     } else if (pk.kind === 'magnet') {
       this.applyBuff('MAGNET');
     }
@@ -771,18 +1005,19 @@ export class Game {
   updateCooldowns() {
     if (this.missileCooldown > 0) this.missileCooldown -= 1;
     if (this.shockCooldown > 0) this.shockCooldown -= 1;
-    if (this.dashCharges < DASH.maxCharges) {
+    if (this.dashCharges < this.dashMax()) {
       this.dashRecharge -= 1;
       if (this.dashRecharge <= 0) {
         this.dashCharges += 1;
-        this.dashRecharge = this.dashCharges >= DASH.maxCharges ? 0 : DASH.cooldownTicks;
+        this.dashRecharge = this.dashCharges >= this.dashMax() ? 0 : DASH.cooldownTicks;
       }
     }
   }
 
   updateEnergy() {
     if (this.energy >= ENERGY.max) return;
-    const rate = this.activeBuff === 'AMMO' ? ENERGY.regenBuffed : ENERGY.regen;
+    const mult = this.character?.energyRegenMult ?? 1;
+    const rate = (this.activeBuff === 'AMMO' ? ENERGY.regenBuffed : ENERGY.regen) * mult;
     this.energy = Math.min(ENERGY.max, this.energy + rate);
   }
 
@@ -826,7 +1061,7 @@ export class Game {
       }
     } else {
       const mv = this.readMoveInput();
-      if (mv.x !== 0 || mv.y !== 0) this.movePlayer(mv.x * PLAYER.speed, mv.y * PLAYER.speed);
+      if (mv.x !== 0 || mv.y !== 0) this.movePlayer(mv.x * p.speed, mv.y * p.speed);
     }
 
     p.trail.push({ x: p.x, y: p.y, life: PLAYER.trailLength });
@@ -885,11 +1120,9 @@ export class Game {
         const e = this.enemies[j];
         if (Math.hypot(m.x - e.x, m.y - e.y) >= e.radius + m.radius) continue;
 
-        e.health -= MISSILE.damage;
-        e.flash = 6;
+        this.damageEnemy(j, MISSILE.damage);
         this.burst(m.x, m.y, palette.missile, 10, 6);
         hit = true;
-        if (e.health <= 0) this.killEnemy(j);
         break;
       }
 
@@ -915,10 +1148,7 @@ export class Game {
 
     this.spawnEnemy();
     this.spawnTimer = 0;
-    this.spawnInterval = Math.max(
-      SPAWN.minInterval,
-      SPAWN.baseInterval - this.wave * SPAWN.intervalStepPerWave,
-    );
+    this.spawnInterval = this.spawnIntervalFor(this.wave);
   }
 
   updateEnemies() {
@@ -946,10 +1176,15 @@ export class Game {
       if (!e) continue;
       e.pulse += 0.1;
       if (e.flash > 0) e.flash -= 1;
+      const slowed = (e.slowTimer ?? 0) > 0;
+      if (slowed) {
+        e.slowTimer -= 1;
+        e.speed *= 0.45;
+      }
 
       // Contact damage (dash grants invincibility, iframes grant grace).
       if (!p.isDashing && p.iframes <= 0 && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius) {
-        const dmg = e.isBoss ? BOSS.contactDamage : PLAYER.damageOnHit;
+        const dmg = e.isBoss ? (e.boss?.contact ?? 25) : PLAYER.damageOnHit;
         // Contact consumes the enemy (except bosses) and damages the player.
         if (!e.isBoss) this.enemies.splice(i, 1);
         this.burst(e.x, e.y, palette.danger, 15, 8);
@@ -959,6 +1194,7 @@ export class Game {
       }
 
       this.moveEnemy(e, i);
+      if (slowed) e.speed /= 0.45;
     }
   }
 
@@ -1008,18 +1244,109 @@ export class Game {
       return;
     }
 
+    // Dreadnought: slow siege engine, spawns fighter swarms.
     if (e.behavior === 'boss') {
       this.stepEnemy(e, angleToPlayer, e.speed);
       e.stateTimer -= 1;
       if (e.stateTimer <= 0) {
-        e.stateTimer = BOSS.minionIntervalTicks;
-        for (let k = 0; k < BOSS.minionsPerSpawn; k += 1) {
+        e.stateTimer = e.boss?.minionInterval ?? 180;
+        const mCount = e.boss?.minionsPerSpawn ?? 4;
+        const mType = ENEMY_TYPES[e.boss?.minion] ?? ENEMY_TYPES.NORMAL;
+        for (let k = 0; k < mCount; k += 1) {
           if (this.enemies.length >= SPAWN.maxEnemies) break;
-          this.spawnEnemy(ENEMY_TYPES.NORMAL);
+          this.spawnEnemy(mType);
         }
         this.burst(e.x, e.y, palette.boss, 20, 8);
         this.emit('shake', { magnitude: 'small' });
         this.emit('sfx', { name: 'bossspawn' });
+      }
+      return;
+    }
+
+    // Star-Wyrm: stalks, telegraphs, then rips across the arena.
+    if (e.behavior === 'dragon') {
+      e.stateTimer -= 1;
+      if (e.state === 'chase') {
+        this.stepEnemy(e, angleToPlayer, e.speed);
+        if (e.stateTimer <= 0) {
+          e.state = 'telegraph';
+          e.stateTimer = 35;
+          e.lockAngle = angleToPlayer;
+        }
+      } else if (e.state === 'telegraph') {
+        e.lockAngle = angleToPlayer;
+        e.flash = 4;
+        if (e.stateTimer <= 0) {
+          e.state = 'lunge';
+          e.stateTimer = 22;
+          this.emit('sfx', { name: 'lunge' });
+          this.emit('shake', { magnitude: 'small' });
+        }
+      } else if (e.state === 'lunge') {
+        this.stepEnemy(e, e.lockAngle, e.speed * 5);
+        this.burst(e.x, e.y, e.color, 2, 4);
+        if (e.stateTimer <= 0) {
+          e.state = 'chase';
+          e.stateTimer = 100;
+        }
+      }
+      return;
+    }
+
+    // Hydra Matriarch: slow, regenerates, splits on death (see killEnemy).
+    if (e.behavior === 'hydra') {
+      this.stepEnemy(e, angleToPlayer, e.speed);
+      e.stateTimer -= 1;
+      if (e.stateTimer <= 0) {
+        e.stateTimer = 30;
+        if (e.health < e.maxHealth) e.health = Math.min(e.maxHealth, e.health + 1);
+      }
+      return;
+    }
+
+    // Void Carrier: keeps its distance, launches sniper rings + pulse push.
+    if (e.behavior === 'carrier') {
+      const d = Math.hypot(p.x - e.x, p.y - e.y);
+      const desired = 480;
+      if (d > desired + 60) this.stepEnemy(e, angleToPlayer, e.speed);
+      else if (d < desired - 60) this.stepEnemy(e, angleToPlayer + Math.PI, e.speed);
+      else this.stepEnemy(e, angleToPlayer + Math.PI / 2, e.speed * 0.5);
+
+      e.stateTimer -= 1;
+      if (e.stateTimer <= 0) {
+        e.stateTimer = e.boss?.minionInterval ?? 240;
+        const mCount = e.boss?.minionsPerSpawn ?? 6;
+        const mType = ENEMY_TYPES[e.boss?.minion] ?? ENEMY_TYPES.NORMAL;
+        for (let k = 0; k < mCount; k += 1) {
+          if (this.enemies.length >= SPAWN.maxEnemies) break;
+          const ma = (k / mCount) * Math.PI * 2 + this.random();
+          this.enemies.push({
+            x: clamp(e.x + Math.cos(ma) * 70, 30, WORLD_WIDTH - 30),
+            y: clamp(e.y + Math.sin(ma) * 70, 30, WORLD_HEIGHT - 30),
+            radius: 14,
+            speed: Math.min(SPAWN.maxSpeed, mType.speed + 1),
+            health: 1,
+            maxHealth: 1,
+            color: mType.color,
+            shape: mType.shape,
+            pulse: 0,
+            type: mType,
+            buff: mType.buff ?? null,
+            drop: null,
+            behavior: mType.behavior ?? 'chase',
+            seed: this.random() * 1000,
+            state: 'chase',
+            stateTimer: 0,
+            lockAngle: 0,
+            flash: 0,
+            slowTimer: 0,
+            isBoss: false,
+          });
+        }
+        this.movePlayer(Math.cos(angleToPlayer) * 14, Math.sin(angleToPlayer) * 14);
+        this.burst(e.x, e.y, e.color, 24, 10);
+        this.emit('shake', { magnitude: 'small' });
+        this.emit('sfx', { name: 'shock' });
       }
       return;
     }
@@ -1089,18 +1416,25 @@ export class Game {
     hud.energy = this.energy;
     hud.buff = this.activeBuff;
     hud.buffRemaining = this.activeBuff ? this.buffTimer / BUFF_DURATION : 0;
+    hud.ultimateName = this.character.ultimate?.name ?? 'Shock';
     hud.dashing = this.player.isDashing;
     hud.dashCharges = this.dashCharges;
-    hud.dashMax = DASH.maxCharges;
+    hud.dashMax = this.dashMax();
     hud.dashRecharge = this.dashRecharge > 0 ? 1 - this.dashRecharge / DASH.cooldownTicks : 0;
-    hud.missileCooldown = this.cooldownFraction(this.missileCooldown, this.cooldownTotal(MISSILE.cooldownTicks));
-    hud.shockCooldown = this.cooldownFraction(this.shockCooldown, this.cooldownTotal(SHOCK.cooldownTicks));
+    hud.missileCooldown = this.cooldownFraction(this.missileCooldown, this.abilityTotal('missile'));
+    hud.shockCooldown = this.cooldownFraction(this.shockCooldown, this.abilityTotal('shock'));
     hud.multiplier = this.multiplier;
-    hud.comboTimer = this.comboTimer > 0 ? this.comboTimer / COMBO.windowTicks : 0;
+    hud.comboTimer = this.comboTimer > 0 ? this.comboTimer / this.comboWindow() : 0;
     hud.bossActive = this.bossActive;
     hud.paused = this.paused;
     hud.timeSec = Math.floor(this.timeTicks / TICKS_PER_SECOND);
     hud.pickups = this.pickups.length;
+    hud.kills = this.kills;
+    hud.characterId = this.characterId;
+    hud.characterName = this.character.name;
+    hud.characterColor = this.character.color;
+    hud.maxHealth = this.player.maxHealth;
+    hud.pilotName = this.pilotName;
   }
 }
 
@@ -1113,10 +1447,16 @@ export function createHudState() {
     energy: ENERGY.max,
     buff: null,
     buffRemaining: 0,
+    ultimateName: 'Shockwave',
     dashing: false,
     dashCharges: DASH.maxCharges,
     dashMax: DASH.maxCharges,
     dashRecharge: 0,
+    characterId: 'vanguard',
+    characterName: 'Vanguard',
+    characterColor: '#38bdf8',
+    maxHealth: PLAYER.maxHealth,
+    pilotName: '',
     missileCooldown: 0,
     shockCooldown: 0,
     multiplier: 1,
@@ -1130,5 +1470,6 @@ export function createHudState() {
     finalStats: null,
     timeSec: 0,
     pickups: 0,
+    kills: 0,
   };
 }

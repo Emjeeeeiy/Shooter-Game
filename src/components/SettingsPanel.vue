@@ -1,4 +1,6 @@
 <script setup>
+import UiIcon from './UiIcon.vue';
+
 const props = defineProps({
   settings: { type: Object, required: true },
 });
@@ -13,7 +15,7 @@ const emit = defineEmits(['toggle-mute', 'volume', 'toggle-shake', 'toggle-fps']
       @click="emit('toggle-mute')"
       :title="settings.muted ? 'Unmute (M)' : 'Mute (M)'"
     >
-      {{ settings.muted ? '🔇 Muted' : '🔊 Sound' }}
+      <span class="inline-flex items-center gap-1.5"><UiIcon :name="settings.muted ? 'sound-off' : 'sound-on'" cls="h-3.5 w-3.5" />{{ settings.muted ? 'Muted' : 'Sound' }}</span>
     </button>
     <label class="flex items-center gap-2 text-[12px] text-zinc-500">
       Vol
@@ -34,7 +36,7 @@ const emit = defineEmits(['toggle-mute', 'volume', 'toggle-shake', 'toggle-fps']
       @click="emit('toggle-shake')"
       title="Toggle screen shake"
     >
-      {{ settings.shake ? '📳 Shake on' : '📳 Shake off' }}
+      <span class="inline-flex items-center gap-1.5"><UiIcon name="shake" cls="h-3.5 w-3.5" />{{ settings.shake ? 'Shake on' : 'Shake off' }}</span>
     </button>
     <button
       type="button"
