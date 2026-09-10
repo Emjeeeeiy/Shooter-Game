@@ -100,6 +100,14 @@ export const shock = {
   energyCost: 35,
 };
 
+// Warden Restoration aura: follows the ship, healing it and burning foes.
+export const restoration = {
+  durationTicks: 300, // 5s
+  healPerTick: 0.2, // +60 integrity over the full aura
+  burnPerTick: 0.12, // ≈7 dps to everything inside
+  radius: 260,
+};
+
 export const combo = {
   windowTicks: 180, // 3s to keep chain alive
   killsPerStep: 8,
@@ -397,11 +405,11 @@ export const CHARACTERS = {
     shockCdMult: 1.1,
     stats: { speed: 2, hull: 5, fire: 5, dash: 2 },
     passive: { name: 'Heavy Plating', desc: 'Takes 30% less damage' },
-    ultimate: { id: 'charge', name: 'Bull Charge', desc: 'Unstoppable charge, then keep killing', cooldownTicks: 300 },
+    ultimate: { id: 'charge', name: 'Seismic Charge', desc: 'Charge a wall to detonate a huge blast', cooldownTicks: 300 },
     damageTakenMult: 0.7,
     dash: { speed: 22, duration: 8, rechargeMult: 1.15, bossDmg: 10 },
     missiles: { count: 14, damage: 5, speed: 8 },
-    kit: 'Siege rockets · Bull Charge · Bull Charge',
+    kit: 'Siege rockets · Crushing dash · Seismic Charge',
   },
   warden: {
     id: 'warden',
@@ -419,7 +427,7 @@ export const CHARACTERS = {
     shockCdMult: 0.7,
     stats: { speed: 2, hull: 4, fire: 2, dash: 3 },
     passive: { name: 'Field Medic', desc: 'Pickups 50% stronger' },
-    ultimate: { id: 'restore', name: 'Restoration', desc: 'Heal + energy, burns nearby foes', cooldownTicks: 300 },
+    ultimate: { id: 'restore', name: 'Restoration', desc: 'Kindles a healing, burning aura', cooldownTicks: 300 },
     pickupMult: 1.5,
     dash: { speed: 25, duration: 8, rechargeMult: 1, bossDmg: 4, healOnKill: 4 },
     missiles: { count: 8, damage: 3, speed: 10, siphon: 2 },
@@ -502,7 +510,7 @@ export const CHARACTERS = {
     missileCdMult: 0.9,
     stats: { speed: 4, hull: 3, fire: 4, dash: 4 },
     passive: { name: 'Plunder', desc: '+6 energy per kill' },
-    ultimate: { id: 'vortex', name: 'Gravity Vortex', desc: 'Drags enemies in, crushes them', cooldownTicks: 300 },
+    ultimate: { id: 'vortex', name: 'Gravity Vortex', desc: 'Yanks foes in, grinds survivors', cooldownTicks: 300 },
     energyOnKill: 6,
     dash: { speed: 27, duration: 8, rechargeMult: 0.9, bossDmg: 5 },
     missiles: { count: 8, damage: 3, speed: 11 },
@@ -523,7 +531,7 @@ export const CHARACTERS = {
     missileCdMult: 1.2,
     stats: { speed: 2, hull: 5, fire: 5, dash: 2 },
     passive: { name: 'Heavy Caliber', desc: 'Triple-damage cannons' },
-    ultimate: { id: 'annihilator', name: 'Annihilator', desc: 'Piercing railbeam toward aim', cooldownTicks: 300 },
+    ultimate: { id: 'annihilator', name: 'Annihilator', desc: 'Deploys an aimable siege beam (rooted)', cooldownTicks: 300 },
     dash: { speed: 21, duration: 9, rechargeMult: 1.2, bossDmg: 12 },
     missiles: { count: 10, damage: 6, speed: 9 },
     kit: 'Heavy shells · Crushing dash · Annihilator',
@@ -543,7 +551,7 @@ export const CHARACTERS = {
     missileCdMult: 0.9,
     stats: { speed: 3, hull: 3, fire: 3, dash: 4 },
     passive: { name: 'Foresight', desc: 'Buffs last 50% longer, combos linger' },
-    ultimate: { id: 'overdrive', name: 'Overdrive', desc: 'Full energy + Skill surge', cooldownTicks: 300 },
+    ultimate: { id: 'overdrive', name: 'Overdrive', desc: 'Surge mode: free skills + Skill buff', cooldownTicks: 300 },
     buffDurationMult: 1.5,
     comboWindowMult: 1.5,
     dash: { speed: 26, duration: 8, rechargeMult: 0.9, bossDmg: 4 },

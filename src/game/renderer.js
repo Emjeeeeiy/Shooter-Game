@@ -1,4 +1,4 @@
-import { MINIMAP_SIZE, WORLD_HEIGHT, WORLD_WIDTH, palette } from './constants.js';
+import { MINIMAP_SIZE, WORLD_HEIGHT, WORLD_WIDTH, palette, restoration as RESTORE } from './constants.js';
 
 const GRID = 100;
 
@@ -24,11 +24,26 @@ export function draw(ctx, game) {
   drawParticles(ctx, game);
   drawTrail(ctx, game);
   drawShockWaves(ctx, game);
+  drawAura(ctx, game);
   drawBullets(ctx, game);
   drawMissiles(ctx, game);
   drawEnemies(ctx, game);
   drawPlayer(ctx, game);
+  drawRampartAura(ctx, game);
+  drawFrenzyAura(ctx, game);
+  drawVortexArms(ctx, game);
+  drawBeam(ctx, game);
+  drawOverdriveAura(ctx, game);
   drawLowHpVignette(ctx, game);
+  drawFrostFlash(ctx, game);
+}
+
+// Stasis freeze-frame: pale flash that fades as time restarts.
+function drawFrostFlash(ctx, game) {
+  if (game.frostFlash <= 0) return;
+  const { width, height } = game.camera;
+  ctx.fillStyle = `rgba(165, 243, 252, ${(0.28 * Math.max(0, game.frostFlash / 18)).toFixed(3)})`;
+  ctx.fillRect(0, 0, width, height);
 }
 
 function drawGrid(ctx, camera) {
@@ -146,15 +161,22 @@ function drawShockWaves(ctx, { shockWaves, camera }) {
   for (const s of shockWaves) {
     const x = s.x - camera.x;
     const y = s.y - camera.y;
+    const color = s.color ?? palette.shock;
+    const hex = s.shape === 'hex';
+    const path = (r) => {
+      if (hex) tracePath(ctx, 'hexagon', x, y, r);
+      else {
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+      }
+    };
     ctx.globalAlpha = Math.max(0, s.life / 30);
-    ctx.strokeStyle = palette.shock;
-    ctx.beginPath();
-    ctx.arc(x, y, s.radius, 0, Math.PI * 2);
+    ctx.strokeStyle = color;
+    path(s.radius);
     ctx.stroke();
     ctx.globalAlpha = Math.max(0, s.life / 30) * 0.35;
     ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.arc(x, y, Math.max(1, s.radius - 10), 0, Math.PI * 2);
+    path(Math.max(1, s.radius - 10));
     ctx.stroke();
     ctx.lineWidth = 3;
   }
@@ -238,7 +260,17 @@ function drawEnemies(ctx, { enemies, camera }) {
       ctx.fillRect(x - w / 2, top, w, 5);
       ctx.fillStyle = e.color;
       ctx.fillRect(x - w / 2, top, w * Math.max(0, e.health / e.maxHealth), 5);
-    } else if (e.health < e.maxHealth) {
+    } else     if ((e.slowTimer ?? 0) > 0) {
+      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = '#a5f3fc';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, r + 6, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (e.health < e.maxHealth) {
       const w = e.radius * 2;
       const top = y - e.radius - 10;
       ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
@@ -365,6 +397,28 @@ function drawPlayer(ctx, game) {
     ctx.arc(x, y, player.radius + (player.isDashing ? 8 : 13), 0, Math.PI * 2);
     ctx.stroke();
     ctx.globalAlpha = player.iframes > 0 && Math.floor(player.iframes / 4) % 2 === 0 ? 0.45 : 1;
+  }
+
+  // Rampart bastion: rotating hex shield while the thorns hold.
+  if (game.rampartTimer > 0) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(game.tick * 0.03);
+    ctx.globalAlpha = 0.7;
+    ctx.strokeStyle = palette.repair;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < 6; i += 1) {
+      const a = (i * Math.PI) / 3;
+      const px = Math.cos(a) * (player.radius + 10);
+      const py = Math.sin(a) * (player.radius + 10);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
+    ctx.globalAlpha = 1;
   }
 
   ctx.save();
@@ -497,7 +551,7 @@ export function traceShip(ctx, shipId) {
 }
 
 // Per-ship cockpit / armor details in dark contrast plus body-color lights.
-function drawShipDetails(ctx, shipId, body) {
+export function drawShipDetails(ctx, shipId, body) {
   ctx.fillStyle = palette.surface;
   if (shipId === 'spectre') {
     ctx.beginPath();
@@ -598,6 +652,242 @@ function drawShipDetails(ctx, shipId, body) {
     ctx.arc(-9, 0, 5, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+// Warden Restoration aura: large breathing green zone that follows the ship,
+// with a countdown ring showing remaining time.
+function drawAura(ctx, game) {
+  if (game.burnTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  const r = RESTORE.radius * (1 + Math.sin(game.tick * 0.08) * 0.02);
+
+  ctx.globalAlpha = 0.07;
+  ctx.fillStyle = palette.repair;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.globalAlpha = 0.5;
+  ctx.strokeStyle = palette.repair;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(
+    x,
+    y,
+    r - 6,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * Math.max(0, game.burnTimer / RESTORE.durationTicks),
+  );
+  ctx.stroke();
+  ctx.globalAlpha = 1;
+}
+
+// Bulwark Rampart aura: semi-large rotating dashed bastion ring with
+// orbiting shards, drawn above the ship while the thorns hold.
+function drawRampartAura(ctx, game) {
+  if (game.rampartTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  const orbit = player.radius + 34;
+
+  ctx.save();
+  ctx.globalAlpha = 0.55;
+  ctx.strokeStyle = palette.repair;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([14, 10]);
+  ctx.lineDashOffset = -game.tick * 0.8;
+  ctx.beginPath();
+  ctx.arc(x, y, orbit, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const t = game.tick * 0.05;
+  for (let k = 0; k < 4; k += 1) {
+    const a = t + (k * Math.PI) / 2;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = k % 2 === 0 ? palette.repair : palette.flash;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// Hornet Barrage frenzy: fast-spinning gold ring with a countdown sweep.
+function drawFrenzyAura(ctx, game) {
+  if (game.frenzyTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  const r = player.radius + 22;
+
+  ctx.save();
+  ctx.globalAlpha = 0.6;
+  ctx.strokeStyle = palette.skill;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 7]);
+  ctx.lineDashOffset = game.tick * 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(
+    x,
+    y,
+    r - 5,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * Math.max(0, game.frenzyTimer / 300),
+  );
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// Corsair Vortex remnant: three spiral galaxy arms grinding around the ship.
+function drawVortexArms(ctx, game) {
+  if (game.vortexTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  const fade = Math.min(1, game.vortexTimer / 60);
+
+  ctx.save();
+  ctx.lineCap = 'round';
+  for (let k = 0; k < 3; k += 1) {
+    const r = 90 + k * 55;
+    const a0 = game.tick * (0.06 - k * 0.012) + (k * Math.PI * 2) / 3;
+    ctx.globalAlpha = (0.55 - k * 0.12) * fade;
+    ctx.strokeStyle = k % 2 === 0 ? palette.magnet : palette.flash;
+    ctx.lineWidth = 5 - k;
+    ctx.beginPath();
+    ctx.arc(x, y, r, a0, a0 + Math.PI * 0.8);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// Titan Annihilator siege beam: layered laser lance with traveling
+// energy packets and a muzzle flare.
+function drawBeam(ctx, game) {
+  if (game.beamTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+  const a = player.angle;
+  const LEN = 900;
+  const flick = 1 + Math.sin(game.tick * 0.6) * 0.08;
+  const ex = x + Math.cos(a) * LEN;
+  const ey = y + Math.sin(a) * LEN;
+
+  ctx.save();
+  ctx.lineCap = 'round';
+
+  // Corona bloom.
+  ctx.globalAlpha = 0.16;
+  ctx.strokeStyle = palette.danger;
+  ctx.shadowColor = palette.danger;
+  ctx.shadowBlur = 30;
+  ctx.lineWidth = 34 * flick;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+
+  // Hot sheath.
+  ctx.globalAlpha = 0.5;
+  ctx.shadowBlur = 18;
+  ctx.strokeStyle = palette.missile;
+  ctx.lineWidth = 13 * flick;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+
+  // Traveling energy packets.
+  ctx.globalAlpha = 0.85;
+  ctx.shadowBlur = 12;
+  ctx.strokeStyle = palette.flash;
+  ctx.lineWidth = 6;
+  ctx.setLineDash([26, 60]);
+  ctx.lineDashOffset = -game.tick * 9;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // White-hot core.
+  ctx.globalAlpha = 0.95;
+  ctx.shadowBlur = 8;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+
+  // Muzzle flare.
+  const fl = 10 + Math.sin(game.tick * 1.1) * 3;
+  ctx.globalAlpha = 0.9;
+  ctx.fillStyle = palette.flash;
+  ctx.shadowBlur = 24;
+  ctx.beginPath();
+  ctx.arc(x, y, fl, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+// Oracle Overdrive surge: counter-rotating gold rings with a countdown.
+function drawOverdriveAura(ctx, game) {
+  if (game.overdriveTimer <= 0) return;
+  const { player, camera } = game;
+  const x = player.x - camera.x;
+  const y = player.y - camera.y;
+
+  ctx.save();
+  ctx.strokeStyle = palette.skill;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([18, 12]);
+  ctx.globalAlpha = 0.65;
+  ctx.lineDashOffset = game.tick * 1.2;
+  ctx.beginPath();
+  ctx.arc(x, y, player.radius + 26, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.globalAlpha = 0.4;
+  ctx.lineDashOffset = -game.tick * 0.9;
+  ctx.beginPath();
+  ctx.arc(x, y, player.radius + 34, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(
+    x,
+    y,
+    player.radius + 18,
+    -Math.PI / 2,
+    -Math.PI / 2 + Math.PI * 2 * Math.max(0, game.overdriveTimer / 300),
+  );
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function drawLowHpVignette(ctx, game) {

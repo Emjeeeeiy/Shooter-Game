@@ -51,7 +51,7 @@ onMounted(() => {
 <template>
   <div
     v-if="mapId === 'random'"
-    class="flex aspect-[3/2] w-full items-center justify-center rounded-lg border border-dashed border-white/20 bg-white/[0.03]"
+    class="flex aspect-3/2 w-full items-center justify-center rounded-lg border border-dashed border-white/20 bg-white/3"
   >
     <span class="text-2xl font-bold text-accent">?</span>
   </div>
@@ -60,6 +60,6 @@ onMounted(() => {
     ref="canvasRef"
     width="360"
     height="240"
-    class="block aspect-[3/2] w-full rounded-lg border border-white/10"
+    class="block aspect-3/2 w-full rounded-lg border border-white/10"
   />
 </template>

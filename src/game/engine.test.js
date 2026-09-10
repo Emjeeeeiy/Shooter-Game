@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, createHudState } from './engine.js';
-import { CHARACTER_LIST, dash as DASH, missile as MISSILE, shock as SHOCK } from './constants.js';
+import { CHARACTER_LIST, WORLD_HEIGHT, WORLD_WIDTH, dash as DASH, missile as MISSILE, palette, shock as SHOCK } from './constants.js';
 
 function makeGame() {
   const hud = createHudState();
@@ -233,6 +233,19 @@ describe('ship ultimates', () => {
     g.shockWave();
     expect(g.enemies[0].health).toBe(14);
     expect(g.player.x).toBeGreaterThan(1800);
+    expect(g.shockWaves.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('spectre blink reaches farther now', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre', 11);
+    g.obstacles = [];
+    g.setPointer(1200, 700); // far corner: capped at 650 range
+    const x0 = g.player.x;
+    const y0 = g.player.y;
+    g.shockWave();
+    expect(Math.hypot(g.player.x - x0, g.player.y - y0)).toBeCloseTo(650, 0);
   });
 
   it('juggernaut bull charge dashes through the horde', () => {
@@ -248,13 +261,46 @@ describe('ship ultimates', () => {
     expect(g.enemies.length).toBe(0);
   });
 
-  it('warden restoration heals', () => {
+  it('warden restoration heals over time and burns nearby foes', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
-    g.start('warden');
+    g.start('warden', 21);
     g.player.health = 50;
+    g.player.iframes = 9999;
+    g.enemies.push(minEnemy(g.player.x + 100, g.player.y, 30));
+    const foe = g.enemies[0];
     g.shockWave();
-    expect(g.player.health).toBe(85);
+    expect(g.regenTimer).toBe(300);
+    expect(g.burnTimer).toBe(300);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.player.health).toBeCloseTo(62);
+    expect(foe.health).toBeLessThan(30);
+  });
+
+  it('warden cooldown waits out the aura, then drains', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('warden', 21);
+    g.player.iframes = 9999;
+    g.shockWave();
+    expect(g.shockCooldown).toBe(300);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.shockCooldown).toBe(300); // frozen while the aura burns
+    for (let t = 0; t < 300; t += 1) g.update();
+    expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
+  });
+
+  it('bulwark cooldown waits out the rampart, then drains', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('bulwark', 21);
+    g.player.iframes = 9999;
+    g.shockWave();
+    expect(g.shockCooldown).toBe(300);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.shockCooldown).toBe(300); // frozen while the thorns hold
+    for (let t = 0; t < 300; t += 1) g.update();
+    expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
   });
 });
 
@@ -438,6 +484,7 @@ describe('expanded roster', () => {
     g.shockWave();
     expect(g.enemies[0]?.slowTimer).toBe(240);
     expect(g.enemies[0].health).toBe(27);
+    expect(g.frostFlash).toBeGreaterThan(0);
 
     hud = createHudState();
     g = new Game(hud, () => {});
@@ -508,7 +555,8 @@ describe('new ultimates', () => {
     g.enemies.push(minEnemy(g.player.x + 20, g.player.y, 1));
     g.shockWave();
     expect(g.rampartTimer).toBe(300);
-    g.update();
+    expect(g.shockWaves.some((s) => s.shape === 'hex')).toBe(true);
+    for (let t = 0; t < 3; t += 1) g.update(); // cast hit-stop freezes the first ticks
     expect(g.enemies.length).toBe(0);
     expect(g.player.health).toBeGreaterThanOrEqual(105);
   });
@@ -522,14 +570,129 @@ describe('new ultimates', () => {
     expect(g.frenzyTimer).toBe(300);
   });
 
-  it('titan annihilator beams toward aim', () => {
+  it('titan annihilator roots the ship and beams where aimed', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
     g.start('titan', 21);
-    g.setPointer(900, 350);
+    g.obstacles = [];
+    g.setPointer(900, 350); // aim +x
     g.enemies.push(minEnemy(g.player.x + 300, g.player.y, 30));
+    const foe = g.enemies[0];
     g.shockWave();
-    expect(g.enemies[0].health).toBe(10);
+    expect(g.beamTimer).toBe(300);
+    const x0 = g.player.x;
+    g.setKey('KeyD', true);
+    for (let t = 0; t < 5; t += 1) g.update();
+    expect(g.player.x).toBe(x0); // rooted: no movement
+    expect(foe.health).toBeLessThan(30); // beam burns along the aim
+    // ...but the aim still tracks the pointer.
+    g.setPointer(300, 350);
+    g.update();
+    expect(Math.abs(g.player.angle)).toBeGreaterThan(2);
+  });
+});
+
+describe('seismic detonation', () => {
+  it('charge detonates on wall impact', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('juggernaut', 31);
+    g.obstacles = [];
+    g.player.x = WORLD_WIDTH - 60;
+    g.player.y = WORLD_HEIGHT / 2;
+    g.updateCamera();
+    g.enemies.push(minEnemy(3500, 1200, 5));
+    g.setPointer(1200, 350);
+    g.shockWave();
+    expect(g.player.chargeDetonate).toBe(true);
+    for (let t = 0; t < 3; t += 1) g.update();
+    expect(g.player.isDashing).toBe(false);
+    expect(g.enemies.length).toBe(0);
+  });
+
+  it('regular dashes never detonate on walls', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('juggernaut', 31);
+    g.obstacles = [];
+    g.player.x = WORLD_WIDTH - 60;
+    g.player.y = WORLD_HEIGHT / 2;
+    g.enemies.push(minEnemy(3500, 1200, 5));
+    g.setPointer(1200, 350);
+    g.dash();
+    g.update();
+    expect(g.player.isDashing).toBe(true);
+    expect(g.enemies.length).toBe(1);
+  });
+});
+
+describe('frenzy visuals', () => {
+  it('frenzy turns the bullet stream gold', () => {
+    const { g } = makeGame();
+    g.frenzyTimer = 300;
+    g.fire();
+    expect(g.bullets[0].color).toBe(palette.skill);
+  });
+
+  it('bullets fly until they hit something', () => {
+    const { g } = makeGame();
+    g.obstacles = [];
+    g.fire(); // straight +x toward the world edge, ~1800px away
+    expect(g.bullets.length).toBe(1);
+    for (let t = 0; t < 100; t += 1) g.updateBullets();
+    expect(g.bullets.length).toBe(1); // no range expiry
+    for (let t = 0; t < 200; t += 1) g.updateBullets();
+    expect(g.bullets.length).toBe(0); // world edge still culls
+  });
+
+  it('vortex field grinds and holds cooldown', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('corsair', 21);
+    g.player.iframes = 9999;
+    g.shockWave();
+    expect(g.vortexTimer).toBe(150);
+    expect(g.shockCooldown).toBe(300);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.shockCooldown).toBe(300); // frozen while the field grinds
+    for (let t = 0; t < 200; t += 1) g.update();
+    expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
+  });
+
+  it('hornet cooldown waits out the frenzy, then drains', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('hornet', 21);
+    g.player.iframes = 9999;
+    g.shockWave();
+    expect(g.shockCooldown).toBe(300);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.shockCooldown).toBe(300); // frozen while guns are hot
+    for (let t = 0; t < 300; t += 1) g.update();
+    expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
+  });
+});
+
+describe('overdrive surge', () => {
+  it('grants free skills with a held cooldown', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('oracle', 21);
+    g.player.iframes = 9999;
+    g.shockWave();
+    expect(g.overdriveTimer).toBe(300);
+    expect(g.activeBuff).toBe('SKILL');
+    g.energy = 10;
+    g.dash();
+    expect(g.energy).toBe(10);
+    expect(g.player.isDashing).toBe(true);
+    g.fireMissiles();
+    expect(g.energy).toBe(10);
+    expect(g.missiles.length).toBeGreaterThan(0);
+    for (let t = 0; t < 60; t += 1) g.update();
+    expect(g.shockCooldown).toBe(300); // frozen while surging
+    for (let t = 0; t < 300; t += 1) g.update();
+    expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
   });
 });
 

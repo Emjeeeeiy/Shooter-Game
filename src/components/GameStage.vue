@@ -58,7 +58,7 @@ const willBeBest = computed(() => hud.gameOver && isBest(hud.finalScore));
 function onSave(name) {
   save(name, hud.finalScore, hud.finalWave, hud.finalStats ?? {});
   emit('run-saved', { name, score: hud.finalScore, wave: hud.finalWave, stats: hud.finalStats ?? {} });
-  hud.gameOver = false;
+  // Keep the game-over overlay open so Retry / Change ship stay available.
 }
 
 // --- multiplayer race: live score broadcast + final submit ------------------

@@ -40,6 +40,7 @@ export function useGame(settings) {
   let fpsFrames = 0;
   let fpsLast = 0;
   let ro = null;
+  let lastPaintKey = '';
 
   function applyAudioSettings() {
     if (!settings) return;
@@ -93,6 +94,8 @@ export function useGame(settings) {
       minimapCtx = minimap.getContext('2d');
       minimapCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
+    // Resizing clears the backing store — force one repaint even if frozen.
+    lastPaintKey = '';
   }
 
   /**
@@ -149,19 +152,35 @@ export function useGame(settings) {
     accumulator += now - previous;
     previous = now;
 
+    const g = game.value;
+    if (!g) return;
+
     // Fixed 60Hz steps so the simulation runs at the same speed on any display.
     // When paused, drain the accumulator so resume doesn't jump.
-    if (game.value?.paused) {
+    if (g.paused) {
       accumulator = 0;
     } else {
       const steps = Math.min(MAX_STEPS, Math.floor(accumulator / STEP_MS));
-      for (let i = 0; i < steps; i += 1) game.value.update();
+      for (let i = 0; i < steps; i += 1) g.update();
       accumulator -= steps * STEP_MS;
       if (accumulator > STEP_MS * MAX_STEPS) accumulator = 0;
     }
 
-    if (ctx) draw(ctx, game.value);
-    if (minimapCtx) drawMinimap(minimapCtx, game.value);
+    // Paint every frame while simulating. Under overlays (pause / game over)
+    // the scene is frozen, so paint once per state instead of forcing a full
+    // backdrop-blur repaint at 60fps.
+    if (g.running && !g.paused) {
+      lastPaintKey = 'live';
+      if (ctx) draw(ctx, g);
+      if (minimapCtx) drawMinimap(minimapCtx, g);
+    } else {
+      const key = `still-${g.tick}-${g.hud.gameOver}`;
+      if (key !== lastPaintKey) {
+        lastPaintKey = key;
+        if (ctx) draw(ctx, g);
+        if (minimapCtx) drawMinimap(minimapCtx, g);
+      }
+    }
   }
 
   // --- input ----------------------------------------------------------------

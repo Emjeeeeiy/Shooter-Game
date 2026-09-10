@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
 import MapPreview from './MapPreview.vue';
-import ShipIcon from './ShipIcon.vue';
+import ShipPreview from './ShipPreview.vue';
 
 const props = defineProps({
   selectedId: { type: String, default: 'vanguard' },
@@ -40,42 +40,41 @@ const current = computed(
       </p>
     </div>
 
-    <div v-if="step === 'ship'" class="mt-6 grid gap-4 sm:grid-cols-2">
-      <button
-        v-for="c in CHARACTER_LIST"
-        :key="c.id"
-        type="button"
-        class="panel p-5 text-left transition-all focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
-        :class="c.id === selectedId ? 'border-accent ring-2 ring-accent/40' : 'hover:border-white/25'"
-          @click="$emit('select', c.id); step = 'map'"
-      >
-        <div class="flex items-center gap-2.5">
-          <ShipIcon :id="c.id" :color="c.color" />
-          <span class="text-base font-semibold text-zinc-100">{{ c.name }}</span>
-          <span
-            v-if="c.id === selectedId"
-            class="ml-auto rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-bold tracking-widest text-accent uppercase"
-          >
-            Selected
-          </span>
+    <div v-if="step === 'ship'" class="mt-6 grid items-start gap-4 md:grid-cols-[340px_minmax(0,1fr)]">
+      <div class="grid content-start grid-cols-2 gap-2">
+        <button
+          v-for="c in CHARACTER_LIST"
+          :key="c.id"
+          type="button"
+          class="panel flex flex-col items-center gap-1.5 p-3 text-center transition-all focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          :class="c.id === selectedId ? 'border-accent ring-2 ring-accent/40' : 'hover:border-white/25'"
+          @click="$emit('select', c.id)"
+        >
+          <ShipPreview :id="c.id" :color="c.color" />
+          <span class="w-full truncate text-[13px] font-semibold text-zinc-100">{{ c.name }}</span>
+        </button>
+      </div>
+      <div class="panel p-6 sm:p-7">
+        <div class="flex flex-wrap items-center gap-4">
+          <ShipPreview :id="current.id" :color="current.color" />
+          <div>
+            <div class="text-xl font-semibold text-zinc-100">{{ current.name }}</div>
+            <div class="label mt-0.5">{{ current.title }}</div>
+          </div>
         </div>
-        <div class="mt-0.5 text-[12px] font-medium tracking-wide text-zinc-500 uppercase">
-          {{ c.title }}
-        </div>
-        <p class="mt-2 text-[13px] text-zinc-400">{{ c.desc }}</p>
-
-        <div class="mt-3 space-y-1 border-t border-white/5 pt-3 text-[12px] leading-relaxed">
+        <p class="mt-3 text-[13px] text-zinc-400">{{ current.desc }}</p>
+        <div class="mt-4 space-y-1 border-t border-white/5 pt-4 text-[12px] leading-relaxed">
           <div class="flex gap-1.5">
-            <span class="shrink-0 font-semibold text-zinc-200">Passive · {{ c.passive.name }}</span>
-            <span class="text-zinc-500">{{ c.passive.desc }}</span>
+            <span class="shrink-0 font-semibold text-zinc-200">Passive · {{ current.passive.name }}</span>
+            <span class="text-zinc-500">{{ current.passive.desc }}</span>
           </div>
           <div class="flex gap-1.5">
-            <span class="shrink-0 font-semibold text-zinc-200"><kbd class="mr-1">E</kbd>{{ c.ultimate.name }} · {{ c.ultimate.cooldownTicks / 60 }}s</span>
-            <span class="text-zinc-500">{{ c.ultimate.desc }}</span>
+            <span class="shrink-0 font-semibold text-zinc-200"><kbd class="mr-1">E</kbd>{{ current.ultimate.name }} · {{ current.ultimate.cooldownTicks / 60 }}s</span>
+            <span class="text-zinc-500">{{ current.ultimate.desc }}</span>
           </div>
           <div class="flex gap-1.5">
             <span class="shrink-0 font-semibold text-zinc-200">Kit</span>
-            <span class="text-zinc-500">{{ c.kit }}</span>
+            <span class="text-zinc-500">{{ current.kit }}</span>
           </div>
         </div>
 
@@ -87,13 +86,21 @@ const current = computed(
                 v-for="i in 5"
                 :key="i"
                 class="h-1.5 w-5 rounded-full"
-                :style="i <= c.stats[s.key] ? { background: c.color } : {}"
-                :class="i <= c.stats[s.key] ? '' : 'bg-white/15'"
+                :style="i <= current.stats[s.key] ? { background: current.color } : {}"
+                :class="i <= current.stats[s.key] ? '' : 'bg-white/15'"
               />
             </span>
           </div>
         </div>
-      </button>
+
+        <button
+          type="button"
+          class="mt-6 w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-surface transition-colors hover:bg-sky-300 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+          @click="step = 'map'"
+        >
+          Continue with {{ current.name }} →
+        </button>
+      </div>
     </div>
 
     <div v-else class="mt-6">
@@ -107,7 +114,7 @@ const current = computed(
         </button>
       </div>
       <div class="mt-3 flex items-center justify-center gap-2.5 text-[13px] text-zinc-400">
-        <ShipIcon :id="current.id" :color="current.color" />
+        <ShipPreview :id="current.id" :color="current.color" />
         <span><span class="font-semibold text-zinc-100">{{ current.name }}</span> locked in</span>
       </div>
       <div class="mx-auto mt-4 grid max-w-4xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

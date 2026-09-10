@@ -95,6 +95,21 @@ export const sfx = {
         tone({ freq: 90, end: 40, type: 'sine', dur: 0.5, vol: 0.5 });
         noise({ dur: 0.4, vol: 0.3, low: 100, high: 1200 });
         break;
+      case 'rampart':
+        tone({ freq: 140, end: 60, type: 'square', dur: 0.3, vol: 0.28 });
+        tone({ freq: 420, end: 180, type: 'triangle', dur: 0.25, vol: 0.14 });
+        noise({ dur: 0.2, vol: 0.18, low: 800, high: 3000 });
+        break;
+      case 'vortex':
+        tone({ freq: 80, end: 400, type: 'sawtooth', dur: 0.5, vol: 0.18 });
+        tone({ freq: 160, end: 800, type: 'sine', dur: 0.45, vol: 0.14, delay: 0.05 });
+        noise({ dur: 0.4, vol: 0.12, low: 200, high: 1500 });
+        break;
+      case 'stasis':
+        tone({ freq: 1200, end: 200, type: 'sine', dur: 0.5, vol: 0.22 });
+        tone({ freq: 1800, end: 300, type: 'triangle', dur: 0.4, vol: 0.1, delay: 0.05 });
+        noise({ dur: 0.3, vol: 0.08, low: 5000, high: 9000 });
+        break;
       case 'explosion':
         noise({ dur: 0.22, vol: 0.25, low: 200, high: 2000 });
         tone({ freq: 160, end: 50, type: 'triangle', dur: 0.2, vol: 0.2 });
