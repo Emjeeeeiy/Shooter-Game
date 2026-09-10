@@ -223,7 +223,7 @@ describe('ship ultimates', () => {
     e.maxHealth = Math.max(hp, e.maxHealth);
   }
 
-  it('spectre blink strikes along its path', () => {
+  it('spectre blink strikes along its path and chains on hit', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
     g.start('spectre', 11);
@@ -233,19 +233,45 @@ describe('ship ultimates', () => {
     g.shockWave();
     expect(g.enemies[0].health).toBe(14);
     expect(g.player.x).toBeGreaterThan(1800);
-    expect(g.shockWaves.length).toBeGreaterThanOrEqual(2);
+    expect(g.shockCooldown).toBe(0); // the hit reset it
+    expect(g.shockWaves.length).toBe(0); // no shockwave visuals
   });
 
-  it('spectre blink reaches farther now', () => {
+  it('spectre blink costs 10 mana', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre', 11);
+    g.energy = 10;
+    g.obstacles = [];
+    g.setPointer(900, 350);
+    g.shockWave();
+    expect(g.player.x).toBeGreaterThan(1800); // cast went through
+    expect(g.energy).toBe(0);
+  });
+
+  it('spectre blink is denied below 10 mana', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('spectre', 11);
+    g.energy = 9;
+    g.obstacles = [];
+    g.setPointer(900, 350);
+    g.shockWave();
+    expect(g.player.x).toBe(1800); // denied, no blink
+    expect(g.shockCooldown).toBe(0);
+  });
+
+  it('spectre blink travels farther now', () => {
     const hud = createHudState();
     const g = new Game(hud, () => {});
     g.start('spectre', 11);
     g.obstacles = [];
-    g.setPointer(1200, 700); // far corner: capped at 650 range
+    g.setPointer(1200, 700);
     const x0 = g.player.x;
     const y0 = g.player.y;
     g.shockWave();
-    expect(Math.hypot(g.player.x - x0, g.player.y - y0)).toBeCloseTo(650, 0);
+    expect(Math.hypot(g.player.x - x0, g.player.y - y0)).toBeCloseTo(694.6, 0);
+    expect(g.shockCooldown).toBe(300); // no hit, no reset
   });
 
   it('juggernaut bull charge dashes through the horde', () => {

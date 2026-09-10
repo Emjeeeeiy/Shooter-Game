@@ -565,7 +565,7 @@ export class Game {
   shockWave() {
     if (!this.running || this.paused) return;
     if (this.shockCooldown > 0) return;
-    if (!this.spendEnergy(SHOCK.energyCost)) return;
+    if (!this.spendEnergy(this.character.ultimate?.energyCost ?? SHOCK.energyCost)) return;
     const ult = this.character.ultimate?.id ?? 'shock';
     if (ult === 'blink') return this.ultBlink();
     if (ult === 'charge') return this.ultCharge();
@@ -622,34 +622,23 @@ export class Game {
     if (hits >= 5) this.hitStop(3);
   }
 
-  // Spectre: teleport toward aim, shredding everything along the path.
+  // Spectre: long void dash — teleport strike that resets on every hit.
   ultBlink() {
     this.shockCooldown = this.ultCooldown();
     const t = this.worldPointer;
     const a0 = Math.atan2(t.y - this.player.y, t.x - this.player.x);
-    const dist = Math.min(650, Math.hypot(t.x - this.player.x, t.y - this.player.y));
+    const dist = Math.min(900, Math.hypot(t.x - this.player.x, t.y - this.player.y));
     const x0 = this.player.x;
     const y0 = this.player.y;
-    // Departure implosion.
-    this.burst(x0, y0, palette.magnet, 25, 10);
-    this.shockWaves.push({ x: x0, y: y0, radius: 20, life: 18 });
-    // Step the blink so walls still block it, burning a bright trail.
-    const steps = 8;
+    // Step the long dash so walls still block it, leaving a thin void trail.
+    const steps = 10;
     for (let s = 1; s <= steps; s += 1) {
       this.movePlayer((Math.cos(a0) * dist) / steps, (Math.sin(a0) * dist) / steps);
-      this.burst(this.player.x, this.player.y, palette.flash, 5, 3);
-      this.burst(this.player.x, this.player.y, palette.magnet, 4, 6);
+      this.burst(this.player.x, this.player.y, palette.magnet, 2, 3);
     }
     const x1 = this.player.x;
     const y1 = this.player.y;
-    // Arrival eruption plus a rift slash along the whole path.
-    this.shockWaves.push({ x: x1, y: y1, radius: 20, life: 18 });
-    this.burst(x1, y1, palette.flash, 25, 12);
-    this.burst(x1, y1, palette.magnet, 25, 10);
-    const segs = Math.max(1, Math.floor(dist / 40));
-    for (let s = 0; s <= segs; s += 1) {
-      this.burst(x0 + ((x1 - x0) * s) / segs, y0 + ((y1 - y0) * s) / segs, palette.magnet, 2, 3);
-    }
+    let hits = 0;
     const len2 = Math.max(1, (x1 - x0) ** 2 + (y1 - y0) ** 2);
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const e = this.enemies[i];
@@ -660,13 +649,17 @@ export class Game {
       const px = x0 + (x1 - x0) * tt;
       const py = y0 + (y1 - y0) * tt;
       if (Math.hypot(e.x - px, e.y - py) > 90 + e.radius) continue;
+      hits += 1;
       e.flash = 8;
       this.burst(e.x, e.y, palette.magnet, 8, 7);
       this.damageEnemy(i, 6);
     }
     this.player.iframes = Math.max(this.player.iframes, 30);
-    this.emit('shake', { magnitude: 'small' });
-    this.hitStop(2);
+    if (hits > 0) {
+      // Assassin chain: every connected hit resets the cooldown.
+      this.shockCooldown = 0;
+      this.emit('notice', { text: 'Chain — blink ready', tone: 'skill' });
+    }
     this.emit('sfx', { name: 'dash' });
   }
 
@@ -1840,6 +1833,7 @@ export class Game {
     hud.buff = this.activeBuff;
     hud.buffRemaining = this.activeBuff ? this.buffTimer / BUFF_DURATION : 0;
     hud.ultimateName = this.character.ultimate?.name ?? 'Shock';
+    hud.ultimateCost = this.character.ultimate?.energyCost ?? SHOCK.energyCost;
     hud.dashing = this.player.isDashing;
     hud.dashCharges = this.dashCharges;
     hud.dashMax = this.dashMax();
@@ -1872,6 +1866,7 @@ export function createHudState() {
     buff: null,
     buffRemaining: 0,
     ultimateName: 'Shockwave',
+    ultimateCost: 35,
     dashing: false,
     dashCharges: DASH.maxCharges,
     dashMax: DASH.maxCharges,

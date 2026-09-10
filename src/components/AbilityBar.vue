@@ -34,7 +34,7 @@ const abilities = computed(() => [
     color: 'text-shock',
     ready: props.hud.shockCooldown === 0,
     cooldown: props.hud.shockCooldown,
-    cost: SHOCK.energyCost,
+    cost: props.hud.ultimateCost ?? SHOCK.energyCost,
   },
 ]);
 </script>

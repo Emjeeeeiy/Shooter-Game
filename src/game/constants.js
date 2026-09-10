@@ -383,7 +383,7 @@ export const CHARACTERS = {
     shockCdMult: 1,
     stats: { speed: 5, hull: 2, fire: 3, dash: 5 },
     passive: { name: 'Executioner', desc: 'Double damage vs enemies under 25% HP' },
-    ultimate: { id: 'blink', name: 'Blink Strike', desc: 'Teleport forward, shredding everything in the path', cooldownTicks: 300 },
+    ultimate: { id: 'blink', name: 'Blink Strike', desc: 'Long dash that resets on every hit', cooldownTicks: 300, energyCost: 10 },
     executeThreshold: 0.25,
     dash: { speed: 28, duration: 10, rechargeMult: 1, bossDmg: 4 },
     missiles: { count: 6, damage: 4, speed: 13 },

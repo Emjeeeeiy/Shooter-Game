@@ -7,7 +7,7 @@ const controls = [
   { keys: ['Click', 'Space'], action: 'Fire (hold)' },
   { keys: ['Shift'], action: 'Dash — invincible (10 energy)' },
   { keys: ['C'], action: 'Missiles — homing volley, no cooldown (25 energy)' },
-  { keys: ['E'], action: 'Ship ultimate — varies by hull (35 energy, 5s)' },
+  { keys: ['E'], action: 'Ship ultimate — varies by hull (energy + 5s)' },
   { keys: ['P', 'Esc'], action: 'Pause' },
   { keys: ['M'], action: 'Mute' },
 ];
