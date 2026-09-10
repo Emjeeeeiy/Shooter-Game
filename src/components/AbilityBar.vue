@@ -11,8 +11,10 @@ const abilities = computed(() => [
     name: 'Dash',
     icon: 'dash',
     color: 'text-zinc-100',
-    ready: !props.hud.dashing,
+    ready: (props.hud.dashCharges ?? 0) > 0,
     cooldown: 0,
+    charges: props.hud.dashCharges ?? 0,
+    max: props.hud.dashMax ?? 2,
   },
   {
     key: 'C',
@@ -73,6 +75,15 @@ const abilities = computed(() => [
       </div>
 
       <div class="label relative z-10 mt-2">{{ ability.name }}</div>
+
+      <div v-if="ability.charges !== undefined" class="relative z-10 mt-1 flex gap-1">
+        <span
+          v-for="i in ability.max"
+          :key="i"
+          class="h-1 flex-1 rounded-full"
+          :class="i <= ability.charges ? 'bg-zinc-100' : 'bg-white/15'"
+        />
+      </div>
 
       <div
         class="absolute inset-x-0 bottom-0 z-20 bg-surface/75"

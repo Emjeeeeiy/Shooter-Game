@@ -1,15 +1,28 @@
 <script setup>
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 
 const props = defineProps({
   score: { type: Number, required: true },
   wave: { type: Number, required: true },
+  stats: { type: Object, default: null },
+  isBest: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(['save', 'restart']);
 
 const name = ref('Pilot');
 const saved = ref(false);
+
+const accuracy = computed(() => props.stats?.accuracy ?? 0);
+const kills = computed(() => props.stats?.kills ?? 0);
+const timeSec = computed(() => props.stats?.timeSec ?? 0);
+const maxMult = computed(() => props.stats?.maxMultiplier ?? 1);
+
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 
 function save() {
   if (saved.value) return;
@@ -19,11 +32,17 @@ function save() {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-30 flex items-center justify-center bg-surface/70 backdrop-blur-md">
-    <div class="panel w-full max-w-sm p-6 sm:p-7">
+  <div class="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-surface/70 backdrop-blur-md">
+    <div class="panel my-4 w-full max-w-sm p-6 sm:p-7">
       <div class="flex items-center gap-2">
         <span class="h-1.5 w-1.5 rounded-full bg-danger" />
         <span class="label text-danger">Critical failure</span>
+        <span
+          v-if="isBest && score > 0"
+          class="ml-auto rounded-full bg-skill/15 px-2 py-0.5 text-[10px] font-bold tracking-widest text-skill uppercase"
+        >
+          New best
+        </span>
       </div>
 
       <div class="mt-5">
@@ -33,6 +52,25 @@ function save() {
         </div>
         <div class="mt-1.5 text-[13px] text-zinc-500">
           Reached wave <span class="text-zinc-300 tabular-nums">{{ props.wave }}</span>
+        </div>
+      </div>
+
+      <div class="mt-4 grid grid-cols-4 gap-2 text-center">
+        <div class="panel px-2 py-2">
+          <div class="label">Kills</div>
+          <div class="mt-1 text-sm font-semibold text-zinc-100 tabular-nums">{{ kills }}</div>
+        </div>
+        <div class="panel px-2 py-2">
+          <div class="label">Time</div>
+          <div class="mt-1 text-sm font-semibold text-zinc-100 tabular-nums">{{ fmtTime(timeSec) }}</div>
+        </div>
+        <div class="panel px-2 py-2">
+          <div class="label">Acc</div>
+          <div class="mt-1 text-sm font-semibold text-zinc-100 tabular-nums">{{ accuracy }}%</div>
+        </div>
+        <div class="panel px-2 py-2">
+          <div class="label">Combo</div>
+          <div class="mt-1 text-sm font-semibold text-skill tabular-nums">x{{ maxMult }}</div>
         </div>
       </div>
 

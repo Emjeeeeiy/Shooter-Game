@@ -7,7 +7,17 @@ defineProps({
 const NOTICE_TONE = {
   skill: 'text-skill',
   ammo: 'text-accent',
+  magnet: 'text-magnet',
+  repair: 'text-repair',
+  danger: 'text-danger',
+  success: 'text-shock',
   muted: 'text-zinc-400',
+};
+
+const BANNER_TONE = {
+  accent: 'text-zinc-100',
+  danger: 'text-danger',
+  success: 'text-shock',
 };
 </script>
 
@@ -18,7 +28,8 @@ const NOTICE_TONE = {
     <div
       v-if="banner"
       :key="banner.id"
-      class="animate-banner text-3xl font-semibold tracking-[0.2em] text-zinc-100 uppercase"
+      class="animate-banner text-3xl font-semibold tracking-[0.2em] uppercase"
+      :class="BANNER_TONE[banner.tone] ?? 'text-zinc-100'"
     >
       {{ banner.text }}
     </div>

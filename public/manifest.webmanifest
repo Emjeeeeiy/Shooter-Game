@@ -1,0 +1,19 @@
+{
+  "name": "Neon Strike",
+  "short_name": "Neon Strike",
+  "description": "Fast top-down arena shooter. Dash, missiles, shockwaves. Survive the waves.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#09090b",
+  "theme_color": "#09090b",
+  "icons": [
+    {
+      "src": "./brand/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

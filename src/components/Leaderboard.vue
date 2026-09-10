@@ -1,21 +1,48 @@
 <script setup>
 import { useLeaderboard } from '../composables/useLeaderboard.js';
 
-const { entries, clear } = useLeaderboard();
+const { entries, clear, exportJson } = useLeaderboard();
+
+function onExport() {
+  const blob = new Blob([exportJson()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'neon-strike-leaderboard.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function fmtTime(sec) {
+  if (!sec) return '—';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
 </script>
 
 <template>
   <section class="panel w-full max-w-[1200px] overflow-hidden">
     <header class="flex items-center justify-between border-b border-white/10 px-4 py-3">
       <h2 class="text-sm font-semibold text-zinc-200">Top pilots</h2>
-      <button
-        v-if="entries.length"
-        type="button"
-        class="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
-        @click="clear"
-      >
-        Clear
-      </button>
+      <div class="flex items-center gap-3">
+        <button
+          v-if="entries.length"
+          type="button"
+          class="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+          @click="onExport"
+        >
+          Export
+        </button>
+        <button
+          v-if="entries.length"
+          type="button"
+          class="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+          @click="clear"
+        >
+          Clear
+        </button>
+      </div>
     </header>
 
     <div v-if="!entries.length" class="px-4 py-8 text-center text-[13px] text-zinc-600">
@@ -30,6 +57,8 @@ const { entries, clear } = useLeaderboard();
             <th class="label px-4 py-2 font-medium">Pilot</th>
             <th class="label px-4 py-2 text-right font-medium">Score</th>
             <th class="label px-4 py-2 text-right font-medium">Wave</th>
+            <th class="label px-4 py-2 text-right font-medium">Kills</th>
+            <th class="label px-4 py-2 text-right font-medium">Time</th>
             <th class="label px-4 py-2 text-right font-medium">Date</th>
           </tr>
         </thead>
@@ -47,6 +76,8 @@ const { entries, clear } = useLeaderboard();
               {{ entry.score.toLocaleString() }}
             </td>
             <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">{{ entry.wave }}</td>
+            <td class="px-4 py-2.5 text-right text-zinc-500 tabular-nums">{{ entry.kills ?? '—' }}</td>
+            <td class="px-4 py-2.5 text-right text-zinc-500 tabular-nums">{{ fmtTime(entry.timeSec) }}</td>
             <td class="px-4 py-2.5 text-right text-[13px] text-zinc-600">{{ entry.date }}</td>
           </tr>
         </tbody>

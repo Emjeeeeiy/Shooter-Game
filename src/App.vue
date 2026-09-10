@@ -20,7 +20,8 @@ import Leaderboard from './components/Leaderboard.vue';
       <Leaderboard />
 
       <footer class="pb-2 text-center text-[11px] text-zinc-600">
-        Scores are stored locally in this browser.
+        Scores are stored locally in this browser · <kbd>P</kbd> pause · <kbd>M</kbd> mute ·
+        touch supported
       </footer>
     </div>
   </div>
