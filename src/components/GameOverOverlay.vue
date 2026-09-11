@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
   score: { type: Number, required: true },
@@ -7,17 +7,23 @@ const props = defineProps({
   stats: { type: Object, default: null },
   isBest: { type: Boolean, default: false },
   race: { type: Boolean, default: false },
+  pilotName: { type: String, default: 'Pilot' },
 });
 
 const emit = defineEmits(['save', 'restart', 'lobby', 'standings']);
 
-const name = ref('Pilot');
 const saved = ref(false);
 
 const accuracy = computed(() => props.stats?.accuracy ?? 0);
 const kills = computed(() => props.stats?.kills ?? 0);
 const timeSec = computed(() => props.stats?.timeSec ?? 0);
 const maxMult = computed(() => props.stats?.maxMultiplier ?? 1);
+const accountName = computed(() => (props.pilotName || 'Pilot').slice(0, 20));
+
+// Reset for the next run (overlay remounts on retry, but guard re-use too).
+watch([() => props.score, () => props.wave], () => {
+  saved.value = false;
+});
 
 function fmtTime(sec) {
   const m = Math.floor(sec / 60);
@@ -28,7 +34,7 @@ function fmtTime(sec) {
 function save() {
   if (saved.value) return;
   saved.value = true;
-  emit('save', name.value.trim() || 'Anonymous');
+  emit('save', accountName.value);
 }
 </script>
 
@@ -76,16 +82,13 @@ function save() {
       </div>
 
       <form class="mt-6 space-y-2.5" @submit.prevent="save">
-        <label class="label block" for="pilot">Pilot ID</label>
-        <input
-          id="pilot"
-          v-model="name"
-          type="text"
-          maxlength="20"
-          :disabled="saved"
-          class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-accent/60 focus:outline-none disabled:opacity-50"
-          placeholder="Enter a name"
-        />
+        <div class="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
+          <span class="label">Pilot</span>
+          <span class="max-w-[60%] truncate text-sm font-semibold text-zinc-100">{{ accountName }}</span>
+        </div>
+        <p class="text-[11px] text-zinc-600">
+          Score saves to <span class="text-zinc-400">{{ accountName }}</span> — one entry per account, best score kept.
+        </p>
 
         <div class="flex gap-2 pt-1.5">
           <button

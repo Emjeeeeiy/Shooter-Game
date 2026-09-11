@@ -616,6 +616,132 @@ describe('new ultimates', () => {
     g.update();
     expect(Math.abs(g.player.angle)).toBeGreaterThan(2);
   });
+
+  it('annihilator beam has no range limit without walls', () => {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('titan', 21);
+    g.obstacles = [];
+    g.setPointer(900, 350); // aim +x
+    g.enemies.push(minEnemy(g.player.x + 1500, g.player.y, 30));
+    const foe = g.enemies[0];
+    g.shockWave();
+    for (let t = 0; t < 5; t += 1) g.update();
+    expect(foe.health).toBeLessThan(30); // 1500px out — the old 900 cap would miss
+    expect(g.beamLen).toBeGreaterThan(1500);
+    expect(g.beamWall).toBe(false);
+  });
+
+  it('annihilator beam stops at the first wall', () => {    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('titan', 21);
+    g.obstacles = [
+      { x: g.player.x + 500, y: g.player.y - 100, width: 60, height: 200 },
+    ];
+    g.setPointer(900, 350); // aim +x, straight into the wall
+    g.enemies.push(minEnemy(g.player.x + 700, g.player.y, 30));
+    const foe = g.enemies[0];
+    g.shockWave();
+    for (let t = 0; t < 5; t += 1) g.update();
+    expect(g.beamWall).toBe(true);
+    expect(g.beamLen).toBeLessThan(560); // stops at the wall face
+    expect(foe.health).toBe(30); // shielded behind the wall
+  });
+
+  it('rival ghosts snap on first sight then glide to targets', () => {
+    const { g } = makeGame();
+    expect(g.rivals).toEqual([]);
+    g.setRivals([{ uid: 'abc', x: 100, y: 100, a: 1, name: 'Roe', ship: 'spectre' }]);
+    expect(g.rivals.length).toBe(1);
+    expect(g.rivals[0].x).toBe(100); // first sight: no glide from the corner
+    expect(g.rivals[0].color).toBeTruthy();
+    g.setRivals([{ uid: 'abc', x: 200, y: 100, a: 1, name: 'Roe', ship: 'spectre' }]);
+    expect(g.rivals[0].x).toBeLessThan(200); // glides, doesn't teleport
+    for (let t = 0; t < 60; t += 1) g.updateRivals();
+    expect(Math.abs(g.rivals[0].x - 200)).toBeLessThan(1);
+    expect(Math.abs(g.rivals[0].y - 100)).toBeLessThan(1);
+    g.setRivals([{ uid: 'abc', x: 200, y: 100, name: 'Roe', ship: 'nope' }]);
+    expect(g.rivals[0].ship).toBe('vanguard'); // unknown hulls fall back
+    g.setRivals([{ uid: 'abc' }]); // missing coords dropped
+    expect(g.rivals.length).toBe(0);
+  });
+});
+
+describe('shared-arena sync', () => {
+  function snapEnemies(g) {
+    return JSON.stringify(
+      g.enemies.map((e) => [
+        e.type.name,
+        Math.round(e.x * 100) / 100,
+        Math.round(e.y * 100) / 100,
+        e.health,
+        Math.round(e.speed * 1000) / 1000,
+      ]),
+    );
+  }
+
+  function syncedPair() {
+    const mk = () => {
+      const hud = createHudState();
+      const g = new Game(hud, () => {});
+      g.start('vanguard', 777, 'debris');
+      return g;
+    };
+    return [mk(), mk()];
+  }
+
+  it('same seed + same ticks deal identical spawn waves', () => {
+    const [a, b] = syncedPair();
+    for (let t = 0; t < 400; t += 1) {
+      a.update();
+      b.update();
+    }
+    expect(a.enemies.length).toBeGreaterThan(0);
+    expect(snapEnemies(a)).toBe(snapEnemies(b));
+  });
+
+  it('local rolls never perturb the shared schedule', () => {
+    const [a, b] = syncedPair();
+    for (let i = 0; i < 50; i += 1) a.rlocal();
+    const sa = [];
+    const sb = [];
+    for (let i = 0; i < 20; i += 1) {
+      sa.push(a.random());
+      sb.push(b.random());
+    }
+    expect(sa).toEqual(sb);
+    for (let t = 0; t < 400; t += 1) {
+      a.update();
+      b.update();
+    }
+    expect(snapEnemies(a)).toBe(snapEnemies(b));
+  });
+
+  it('skill uses raise fx markers for the multiplayer echo', () => {
+    const { g } = makeGame();
+    expect(g.fx).toBeNull();
+    g.dash();
+    expect(g.fx?.k).toBe('dash');
+    const s1 = g.fx.s;
+    g.fireMissiles();
+    expect(g.fx?.k).toBe('missiles');
+    expect(g.fx.s).toBeGreaterThan(s1);
+    g.shockWave();
+    expect(g.fx?.k).toBe('shock');
+  });
+
+  it('ghost fx echoes play once as local-only visuals', () => {
+    const { g } = makeGame();
+    const before = g.enemies.length;
+    g.setRivals([{ uid: 'r1', x: 200, y: 200, a: 0, name: 'Roe', ship: 'vanguard', fx: { k: 'shock', s: 1, a: 0 } }]);
+    expect(g.ghostRings.length).toBe(1);
+    g.setRivals([{ uid: 'r1', x: 200, y: 200, a: 0, name: 'Roe', ship: 'vanguard', fx: { k: 'shock', s: 1, a: 0 } }]);
+    expect(g.ghostRings.length).toBe(1); // same sequence: no replay
+    expect(g.enemies.length).toBe(before); // echoes never touch gameplay
+    g.setRivals([{ uid: 'r1', x: 200, y: 200, a: 0, name: 'Roe', ship: 'vanguard', fx: { k: 'missiles', s: 2, a: 0 } }]);
+    expect(g.particles.length).toBeGreaterThan(0); // missile tracers are visual only
+    expect(g.enemies.length).toBe(before);
+  });
 });
 
 describe('seismic detonation', () => {

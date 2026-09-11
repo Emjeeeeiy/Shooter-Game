@@ -286,6 +286,20 @@ export function useGame(settings) {
   };
   const setCharacter = (id) => game.value?.setCharacter(id);
   const setPilotName = (name) => game.value?.setPilotName(name);
+  // Snapshot for the throttled multiplayer broadcast (same arena, live ghosts).
+  const getSelf = () => {
+    const g = game.value;
+    if (!g?.player) return {};
+    return {
+      x: g.player.x,
+      y: g.player.y,
+      a: g.player.angle,
+      ship: g.characterId ?? 'vanguard',
+    };
+  };
+  const setRivals = (list) => game.value?.setRivals(list);
+  // Latest skill/ultimate marker {k, a, s} for the multiplayer echo.
+  const getFx = () => game.value?.fx ?? null;
   const stop = () => game.value?.stop();
   const togglePause = () => game.value?.togglePause();
   const doDash = () => {
@@ -351,6 +365,9 @@ export function useGame(settings) {
     togglePause,
     setCharacter,
     setPilotName,
+    getSelf,
+    setRivals,
+    getFx,
     doDash,
     doMissiles,
     doShock,

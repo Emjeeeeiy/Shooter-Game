@@ -51,6 +51,7 @@ export function useAuth() {
       await updateProfile(cred.user, { displayName: name });
       await setDoc(doc(db, 'users', cred.user.uid), {
         name,
+        nameLower: name.toLowerCase(),
         email: email.trim(),
         createdAt: Date.now(),
         gamesPlayed: 0,
@@ -77,7 +78,7 @@ export function useAuth() {
     const clean = String(name).trim().slice(0, 20) || 'Pilot';
     await updateProfile(u, { displayName: clean });
     try {
-      await setDoc(doc(db, 'users', u.uid), { name: clean }, { merge: true });
+      await setDoc(doc(db, 'users', u.uid), { name: clean, nameLower: clean.toLowerCase() }, { merge: true });
     } catch {
       // RTDB write failed — Auth profile still updated.
     }

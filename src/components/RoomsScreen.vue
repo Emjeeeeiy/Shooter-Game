@@ -8,6 +8,7 @@ import {
   leaveRoom,
   setRoomMap,
   setRoomMode,
+  setRoomPhoto,
   setRoomShip,
   showResults,
   startMatch,
@@ -15,12 +16,21 @@ import {
   useRoom,
 } from '../composables/useRoom.js';
 import { usePresence } from '../composables/usePresence.js';
+import {
+  friendlyFriendError,
+  loadSentMap,
+  sendFriendRequest,
+  storeSentMap,
+  useFriendList,
+  useFriendRequests,
+} from '../composables/useFriends.js';
 import MapPreview from './MapPreview.vue';
 import UiIcon from './UiIcon.vue';
 
 const props = defineProps({
   uid: { type: String, required: true },
   pilotName: { type: String, default: 'Pilot' },
+  photo: { type: String, default: '' },
   rejoinCode: { type: String, default: '' },
 });
 
@@ -39,11 +49,81 @@ const presence = usePresence();
 const sentIds = ref(new Set());
 let unsubOnline = null;
 
+const friendReqCtl = useFriendRequests();
+const friendListCtl = useFriendList();
+const friendReqs = friendReqCtl.requests;
+const friendList = friendListCtl.friends;
+const sentMap = ref({});
+const friendSending = ref(null);
+const friendMsg = ref('');
+
+const friendUids = computed(() => new Set(friendList.value.map((f) => f.uid)));
+const incomingByUid = computed(() => {
+  const map = new Map();
+  for (const r of friendReqs.value) {
+    if (r.fromUid && !map.has(r.fromUid)) map.set(r.fromUid, r);
+  }
+  return map;
+});
+const onlineIds = computed(() => new Set(presence.online.value.map((p) => p.uid)));
+const friendsNotInRoom = computed(() => {
+  const memberIds = new Set(members.value.map((m) => m.id));
+  return friendList.value
+    .filter((f) => !memberIds.has(f.uid))
+    .sort(
+      (a, b) =>
+        Number(onlineIds.value.has(b.uid)) - Number(onlineIds.value.has(a.uid)) ||
+        a.name.localeCompare(b.name),
+    );
+});
+
+watch(
+  () => props.uid,
+  (uid) => {
+    sentMap.value = loadSentMap(uid);
+    friendReqCtl.watchUid(uid);
+    friendListCtl.watchUid(uid);
+  },
+  { immediate: true },
+);
+
+async function onAddFriend(m) {
+  if (friendSending.value) return;
+  friendSending.value = m.id;
+  friendMsg.value = '';
+  try {
+    const { id } = await sendFriendRequest(m.id, {
+      fromUid: props.uid,
+      fromName: props.pilotName,
+      fromPhoto: props.photo,
+    });
+    sentMap.value = { ...sentMap.value, [m.id]: id };
+    storeSentMap(props.uid, sentMap.value);
+    friendMsg.value = `Request sent to ${m.name} — they need to accept.`;
+  } catch (e) {
+    friendMsg.value = friendlyFriendError(e);
+  } finally {
+    friendSending.value = null;
+  }
+}
+
+async function onAcceptFriend(req) {
+  friendMsg.value = '';
+  try {
+    await friendReqCtl.accept(props.uid, req);
+    friendMsg.value = `${req.fromName} is now your friend.`;
+  } catch (e) {
+    friendMsg.value = friendlyFriendError(e);
+  }
+}
+
 onMounted(() => {
   unsubOnline = presence.subscribe();
 });
 onBeforeUnmount(() => {
   if (unsubOnline) unsubOnline();
+  friendReqCtl.watchUid(null);
+  friendListCtl.watchUid(null);
 });
 
 const othersOnline = computed(() => {
@@ -82,6 +162,15 @@ watch(me, (m) => {
 
 function shipDef(id) {
   return CHARACTER_LIST.find((c) => c.id === id) ?? CHARACTER_LIST[0];
+}
+
+function memberPhoto(id) {
+  const m = members.value.find((x) => x.id === id);
+  return m?.photo ?? '';
+}
+
+function initialOf(name) {
+  return (String(name ?? 'P').trim().charAt(0) || 'P').toUpperCase();
 }
 
 const shownMap = computed(() => {
@@ -136,12 +225,25 @@ watch(ship, async (s) => {
   }
 });
 
+// Keep the lobby avatar in sync when the profile picture changes mid-room.
+watch(
+  () => props.photo,
+  async (p) => {
+    if (!code.value) return;
+    try {
+      await setRoomPhoto(code.value, props.uid, p);
+    } catch {
+      // ignore — will sync on next join
+    }
+  },
+);
+
 async function onCreate(mode) {
   if (busy.value) return;
   busy.value = true;
   error.value = '';
   try {
-    code.value = await createRoom(props.uid, props.pilotName, ship.value, mode);
+    code.value = await createRoom(props.uid, props.pilotName, ship.value, mode, props.photo);
   } catch (e) {
     error.value = e?.message ?? 'Could not create room (network / database rules?).';
   } finally {
@@ -154,7 +256,7 @@ async function onJoin() {
   busy.value = true;
   error.value = '';
   try {
-    code.value = await joinRoom(joinInput.value.trim(), props.uid, props.pilotName, ship.value);
+    code.value = await joinRoom(joinInput.value.trim(), props.uid, props.pilotName, ship.value, props.photo);
   } catch (e) {
     error.value = e?.message ?? 'Could not join room.';
   } finally {
@@ -212,7 +314,7 @@ function copyCode() {
       <div class="label">Multiplayer race</div>
       <h2 class="mt-1 text-3xl font-semibold text-zinc-50">Squad up</h2>
       <p class="mt-2 text-center text-[13px] text-zinc-500">
-        Everyone flies their own run at the same time — live scores decide the winner.
+        Same arena, same waves, live rival ships and skills — highest score wins.
       </p>
 
       <div class="panel mt-6 w-full p-6">
@@ -225,7 +327,7 @@ function copyCode() {
           <span v-if="busy">Working…</span>
           <span v-else class="inline-flex items-center justify-center gap-2"><UiIcon name="users" cls="h-4 w-4" />Host Arcade Co-op</span>
         </button>
-        <p class="mt-1.5 text-[11px] text-zinc-600">Same battlefield, squad total wins. Boss kills gift repairs to mates.</p>
+        <p class="mt-1.5 text-[11px] text-zinc-600">Same battlefield with live rivals, squad total wins. Boss kills gift repairs to mates.</p>
         <button
           type="button"
           :disabled="busy"
@@ -235,7 +337,7 @@ function copyCode() {
           <span v-if="busy">Working…</span>
           <span v-else class="inline-flex items-center justify-center gap-2"><UiIcon name="swords" cls="h-4 w-4" />Host Versus Duel</span>
         </button>
-        <p class="mt-1.5 text-[11px] text-zinc-600">Same-seed duel — every 5 kills sends chargers at your rivals.</p>
+        <p class="mt-1.5 text-[11px] text-zinc-600">Same-arena duel, rivals visible — every 5 kills sends chargers at them.</p>
 
         <div class="my-4 border-t border-white/10" />
 
@@ -262,6 +364,10 @@ function copyCode() {
 
         <p v-if="error" class="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
           {{ error }}
+        </p>
+
+        <p class="mt-3 text-center text-[11px] text-zinc-600">
+          Tip: anyone with the code can join — add them as a friend from the pilot list inside the room, or find pilots with the search icon up top.
         </p>
       </div>
 
@@ -309,8 +415,20 @@ function copyCode() {
           <li
             v-for="m in members"
             :key="m.id"
-            class="flex items-center gap-2.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2"
+            class="flex flex-wrap items-center gap-2.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2"
           >
+            <img
+              v-if="m.photo"
+              :src="m.photo"
+              alt=""
+              class="h-8 w-8 shrink-0 rounded-full border border-white/10 object-cover"
+            />
+            <div
+              v-else
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm font-semibold text-accent"
+            >
+              {{ initialOf(m.name) }}
+            </div>
             <span class="text-sm font-medium" :class="m.id === uid ? 'text-accent' : 'text-zinc-200'">
               {{ m.name }}{{ m.id === uid ? ' (you)' : '' }}
             </span>
@@ -322,8 +440,66 @@ function copyCode() {
             >
               {{ m.ready ? 'READY' : 'WAITING' }}
             </span>
+            <template v-if="m.id !== uid">
+              <span
+                v-if="friendUids.has(m.id)"
+                class="rounded-full border border-skill/30 px-2 py-0.5 text-[10px] font-medium text-skill"
+              >
+                FRIENDS
+              </span>
+              <button
+                v-else-if="incomingByUid.has(m.id)"
+                type="button"
+                class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-surface transition-colors hover:bg-sky-300"
+                @click="onAcceptFriend(incomingByUid.get(m.id))"
+              >
+                ACCEPT
+              </button>
+              <span
+                v-else-if="sentMap[m.id]"
+                class="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-zinc-500"
+              >
+                SENT ✓
+              </span>
+              <button
+                v-else
+                type="button"
+                :disabled="friendSending === m.id"
+                class="rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-bold text-accent transition-colors hover:bg-accent/10 disabled:opacity-60"
+                @click="onAddFriend(m)"
+              >
+                {{ friendSending === m.id ? '…' : '+ ADD' }}
+              </button>
+            </template>
           </li>
         </ul>
+        <p v-if="friendMsg" class="mt-2 text-[12px] text-zinc-400">{{ friendMsg }}</p>
+
+        <div class="mt-4">
+          <div class="label">Friends — invite</div>
+          <div v-if="!friendsNotInRoom.length" class="mt-1.5 text-[12px] text-zinc-600">
+            No friends outside this room. Add pilots above, or find more via the search icon up top.
+          </div>
+          <ul v-else class="mt-2 space-y-1.5">
+            <li v-for="f in friendsNotInRoom" :key="f.uid" class="flex items-center gap-2 text-sm">
+              <span
+                class="h-2 w-2 shrink-0 rounded-full"
+                :class="onlineIds.has(f.uid) ? 'bg-repair' : 'bg-zinc-700'"
+                :title="onlineIds.has(f.uid) ? 'Online' : 'Offline'"
+              />
+              <span class="font-medium text-zinc-200">{{ f.name }}</span>
+              <button
+                v-if="!sentIds.has(f.uid)"
+                type="button"
+                class="ml-auto rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
+                @click="invite(f)"
+              >
+                Invite
+              </button>
+              <span v-else class="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
+            </li>
+          </ul>
+        </div>
 
         <div class="mt-4">
           <div class="label">Online pilots — invite</div>
@@ -426,6 +602,18 @@ function copyCode() {
               :class="s.id === uid ? 'text-accent' : 'text-zinc-300'"
             >
               <span class="w-6 text-zinc-500">{{ i + 1 }}</span>
+              <img
+                v-if="memberPhoto(s.id)"
+                :src="memberPhoto(s.id)"
+                alt=""
+                class="h-6 w-6 shrink-0 rounded-full border border-white/10 object-cover"
+              />
+              <div
+                v-else
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-accent"
+              >
+                {{ initialOf(s.name) }}
+              </div>
               <span class="inline-flex items-center gap-1 font-medium">{{ s.name }}<UiIcon v-if="s.done" name="check" cls="h-3 w-3 text-shock" /></span>
               <span class="ml-auto">{{ s.score.toLocaleString() }}</span>
               <span class="w-14 text-right text-[12px] text-zinc-500">W{{ s.wave }}</span>
@@ -458,6 +646,18 @@ function copyCode() {
               :class="s.id === uid ? 'text-accent' : 'text-zinc-300'"
             >
               <span class="w-6 text-zinc-500">{{ i + 1 }}</span>
+              <img
+                v-if="memberPhoto(s.id)"
+                :src="memberPhoto(s.id)"
+                alt=""
+                class="h-6 w-6 shrink-0 rounded-full border border-white/10 object-cover"
+              />
+              <div
+                v-else
+                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-accent"
+              >
+                {{ initialOf(s.name) }}
+              </div>
               <span class="font-medium">{{ s.name }}</span>
               <span class="ml-auto">{{ s.score.toLocaleString() }}</span>
               <span class="w-14 text-right text-[12px] text-zinc-500">W{{ s.wave }}</span>

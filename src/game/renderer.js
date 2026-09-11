@@ -29,6 +29,8 @@ export function draw(ctx, game) {
   drawMissiles(ctx, game);
   drawEnemies(ctx, game);
   drawPlayer(ctx, game);
+  drawRivals(ctx, game);
+  drawGhostRings(ctx, game);
   drawRampartAura(ctx, game);
   drawFrenzyAura(ctx, game);
   drawVortexArms(ctx, game);
@@ -445,6 +447,56 @@ function drawPlayer(ctx, game) {
   ctx.globalAlpha = 1;
 }
 
+// Multiplayer rival ghosts: room mates racing the same seeded arena.
+// Translucent, no glow (perf), name-tagged — visual only, never collide.
+function drawRivals(ctx, game) {
+  const rivals = game.rivals;
+  if (!rivals || !rivals.length) return;
+  const { camera } = game;
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = '11px Inter, sans-serif';
+  for (const r of rivals) {
+    const x = r.x - camera.x;
+    const y = r.y - camera.y;
+    if (!onScreen(x, y, 60, camera)) continue;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(r.a || 0);
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = r.color || '#e4e4e7';
+    traceShip(ctx, r.ship || 'vanguard');
+    ctx.fill();
+    ctx.restore();
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#e4e4e7';
+    ctx.fillText(r.name || 'Pilot', x, y - 32);
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// Echoes of rival skills/ultimates: expanding rings, purely decorative.
+function drawGhostRings(ctx, game) {
+  const rings = game.ghostRings;
+  if (!rings || !rings.length) return;
+  const { camera } = game;
+  ctx.save();
+  for (const r of rings) {
+    const x = r.x - camera.x;
+    const y = r.y - camera.y;
+    if (!onScreen(x, y, r.r + 20, camera)) continue;
+    ctx.globalAlpha = Math.max(0, (r.life / r.maxLife) * 0.8);
+    ctx.strokeStyle = r.color || palette.flash;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, r.r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
 // Unique silhouette per hull. Nose points +x and every footprint stays
 // within ~±27 units, so all ships read the same size and hitboxes never lie.
 export function traceShip(ctx, shipId) {
@@ -781,14 +833,16 @@ function drawVortexArms(ctx, game) {
 }
 
 // Titan Annihilator siege beam: layered laser lance with traveling
-// energy packets and a muzzle flare.
+// energy packets, a muzzle flare, and an impact bloom where it bites a wall.
+// Length is unlimited — the engine raycasts until the first wall or edge.
 function drawBeam(ctx, game) {
   if (game.beamTimer <= 0) return;
   const { player, camera } = game;
+  const LEN = game.beamLen || 0;
+  if (LEN <= 0) return;
   const x = player.x - camera.x;
   const y = player.y - camera.y;
   const a = player.angle;
-  const LEN = 900;
   const flick = 1 + Math.sin(game.tick * 0.6) * 0.08;
   const ex = x + Math.cos(a) * LEN;
   const ey = y + Math.sin(a) * LEN;
@@ -847,6 +901,24 @@ function drawBeam(ctx, game) {
   ctx.beginPath();
   ctx.arc(x, y, fl, 0, Math.PI * 2);
   ctx.fill();
+
+  // Impact bloom where the lance bites the wall.
+  if (game.beamWall) {
+    const iw = 12 + Math.sin(game.tick * 0.9) * 3;
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = palette.missile;
+    ctx.shadowColor = palette.missile;
+    ctx.shadowBlur = 26;
+    ctx.beginPath();
+    ctx.arc(ex, ey, iw, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = palette.flash;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(ex, ey, iw * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   ctx.restore();
   ctx.globalAlpha = 1;

@@ -531,7 +531,7 @@ export const CHARACTERS = {
     missileCdMult: 1.2,
     stats: { speed: 2, hull: 5, fire: 5, dash: 2 },
     passive: { name: 'Heavy Caliber', desc: 'Triple-damage cannons' },
-    ultimate: { id: 'annihilator', name: 'Annihilator', desc: 'Deploys an aimable siege beam (rooted)', cooldownTicks: 300 },
+    ultimate: { id: 'annihilator', name: 'Annihilator', desc: 'Wall-to-wall siege lance, stopped only by walls (rooted)', cooldownTicks: 300 },
     dash: { speed: 21, duration: 9, rechargeMult: 1.2, bossDmg: 12 },
     missiles: { count: 10, damage: 6, speed: 9 },
     kit: 'Heavy shells · Crushing dash · Annihilator',

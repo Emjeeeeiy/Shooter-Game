@@ -8,17 +8,34 @@ defineProps({
   offline: { type: Boolean, default: false },
   best: { type: Number, default: 0 },
   cloud: { type: Boolean, default: false },
+  photo: { type: String, default: '' },
 });
 
-defineEmits(['single', 'multi', 'settings', 'logout']);
+defineEmits(['single', 'multi', 'settings', 'profile', 'logout']);
 </script>
 
 <template>
   <div class="flex w-full max-w-4xl flex-col items-center">
     <div class="label">Neon Strike — Command deck</div>
-    <h2 class="mt-1 text-3xl font-semibold text-zinc-50">
-      Welcome, <span class="text-accent">{{ pilotName }}</span>
-    </h2>
+    <div class="mt-3 flex items-center gap-3">
+      <img
+        v-if="photo"
+        :src="photo"
+        alt="Pilot avatar"
+        class="h-12 w-12 rounded-full border border-white/15 object-cover"
+      />
+      <div
+        v-else
+        class="flex h-12 w-12 items-center justify-center rounded-full border border-white/15 bg-white/5 text-xl font-semibold text-accent"
+      >
+        {{ (pilotName || 'P').trim().charAt(0).toUpperCase() }}
+      </div>
+      <div class="text-left">
+        <h2 class="text-3xl font-semibold text-zinc-50">
+          Welcome, <span class="text-accent">{{ pilotName }}</span>
+        </h2>
+      </div>
+    </div>
     <p class="mt-2 text-[13px] text-zinc-500 tabular-nums">
       {{ offline ? 'Flying offline · local scores only' : email }}
       <span v-if="best > 0"> · Best {{ best.toLocaleString() }}</span>
@@ -48,6 +65,15 @@ defineEmits(['single', 'multi', 'settings', 'logout']);
         <p class="mt-1 text-[13px] text-zinc-500">
           {{ offline ? 'Log in to race friends in live score rooms.' : 'Create or join a room, race live scores.' }}
         </p>
+      </button>
+
+      <button
+        type="button"
+        class="panel group p-5 text-left transition-all hover:border-white/25"
+        @click="$emit('profile')"
+      >
+        <div class="flex items-center gap-2 text-base font-semibold text-zinc-100"><UiIcon name="user" cls="h-4 w-4" />Profile</div>
+        <p class="mt-1 text-[13px] text-zinc-500">Callsign, picture, ships, best score.</p>
       </button>
 
       <button

@@ -57,7 +57,7 @@ function fmtTime(sec) {
           Global
         </button>
       </div>
-      <h2 class="hidden text-sm font-semibold text-zinc-200 sm:block">Top pilots</h2>
+      <h2 class="hidden text-sm font-semibold text-zinc-200 sm:block" title="One entry per account — best score kept">Top pilots</h2>
       <div class="flex items-center gap-3">
         <button
           v-if="tab === 'local' && entries.length"
@@ -107,7 +107,7 @@ function fmtTime(sec) {
           <tbody>
             <tr
               v-for="(entry, index) in entries"
-              :key="`${entry.name}-${entry.score}-${index}`"
+              :key="`${entry.uid ?? entry.name}-${index}`"
               class="border-b border-white/5 last:border-0"
             >
               <td class="px-4 py-2.5 text-zinc-500 tabular-nums">{{ index + 1 }}</td>
@@ -155,7 +155,7 @@ function fmtTime(sec) {
           <tbody>
             <tr
               v-for="(entry, index) in global"
-              :key="`${entry.name}-${entry.score}-${entry.ts}-${index}`"
+              :key="`${entry.uid ?? entry.name}-${entry.ts}-${index}`"
               class="border-b border-white/5 last:border-0"
             >
               <td class="px-4 py-2.5 text-zinc-500 tabular-nums">{{ index + 1 }}</td>

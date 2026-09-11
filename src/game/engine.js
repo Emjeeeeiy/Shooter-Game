@@ -65,6 +65,7 @@ export class Game {
     this.pilotName = '';
     this.seed = 1;
     this.rngState = 1;
+    this.rngLocal = 1;
 
     this.reset();
   }
@@ -105,6 +106,10 @@ export class Game {
     this.shockWaves = [];
     this.obstacles = [];
     this.pickups = [];
+    this.rivals = [];
+    this.ghostRings = [];
+    this.fx = null;
+    this.fxSeq = 0;
 
     this.activeBuff = null;
     this.buffTimer = 0;
@@ -135,6 +140,8 @@ export class Game {
     this.frostFlash = 0;
     this.vortexTimer = 0;
     this.beamTimer = 0;
+    this.beamLen = 0;
+    this.beamWall = false;
     this.overdriveTimer = 0;
 
     this.spawnTimer = 0;
@@ -253,6 +260,9 @@ export class Game {
   srand(seed) {
     this.seed = seed >>> 0 || 1;
     this.rngState = this.seed;
+    // Local stream derives from the same seed but runs independently, so
+    // player-driven rolls (drops, splits) never desync the shared schedule.
+    this.rngLocal = ((seed >>> 0) ^ 0x9e3779b9) >>> 0 || 1;
   }
 
   /** Gameplay randomness. Visual-only particles keep using Math.random. */
@@ -260,6 +270,20 @@ export class Game {
     this.rngState |= 0;
     this.rngState = (this.rngState + 0x6d2b79f5) | 0;
     let t = Math.imul(this.rngState ^ (this.rngState >>> 15), 1 | this.rngState);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+
+  /**
+   * Local-only randomness: kill drops, death splits, sabotage intake.
+   * Consuming this never perturbs the shared world schedule, so room mates
+   * on the same seed keep identical spawn waves.
+   */
+  rlocal() {
+    if (!this.rngLocal) this.rngLocal = 1;
+    this.rngLocal |= 0;
+    this.rngLocal = (this.rngLocal + 0x6d2b79f5) | 0;
+    let t = Math.imul(this.rngLocal ^ (this.rngLocal >>> 15), 1 | this.rngLocal);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
@@ -281,6 +305,100 @@ export class Game {
     };
     this.emit('gameover');
     this.emit('sfx', { name: 'gameover' });
+  }
+
+  // --- multiplayer rivals ---------------------------------------------------
+  // Ghost ships of room mates racing the same seeded arena. Visual only:
+  // no collision, no interaction — scores still decide the winner.
+
+  /** Replace the ghost roster; display positions glide toward targets. */
+  setRivals(list) {
+    const next = [];
+    for (const r of list ?? []) {
+      if (!r || typeof r.uid !== 'string' || !Number.isFinite(r.x) || !Number.isFinite(r.y)) continue;
+      const prev = this.rivals.find((g) => g.uid === r.uid);
+      const ship = CHARACTERS[r.ship] ? r.ship : 'vanguard';
+      const x = prev ? prev.x : r.x;
+      const y = prev ? prev.y : r.y;
+      const a = Number.isFinite(r.a) ? r.a : (prev?.a ?? 0);
+      const lastFx = prev?.lastFx ?? -1;
+      next.push({
+        uid: r.uid,
+        // Snap on first sight so nobody pops in from the corner.
+        x,
+        y,
+        tx: r.x,
+        ty: r.y,
+        a,
+        name: String(r.name ?? 'Pilot').slice(0, 20),
+        ship,
+        color: CHARACTERS[ship]?.color ?? '#e4e4e7',
+        lastFx,
+      });
+      // New skill/ultimate sighting on a known-or-new ghost: play it locally.
+      const fx = r.fx;
+      if (
+        fx &&
+        Number.isInteger(fx.s) &&
+        fx.s !== lastFx &&
+        (fx.k === 'dash' || fx.k === 'missiles' || fx.k === 'shock')
+      ) {
+        const g = next[next.length - 1];
+        g.lastFx = fx.s;
+        this.spawnGhostFx(x, y, Number.isFinite(fx.a) ? fx.a : a, fx.k, g.color);
+      }
+    }
+    this.rivals = next;
+  }
+
+  /** Visual-only echo of a rival's skill: rings + tracers, zero damage. */
+  spawnGhostFx(x, y, angle, kind, color) {
+    if (kind === 'shock') {
+      this.ghostRings.push({ x, y, r: 24, vr: 16, life: 26, maxLife: 26, color });
+      this.burst(x, y, color, 12, 6);
+    } else if (kind === 'missiles') {
+      for (let i = 0; i < 8; i += 1) {
+        if (this.particles.length >= MAX_PARTICLES) this.particles.shift();
+        const a = angle + (i - 3.5) * 0.09;
+        const sp = 13 + (i % 3);
+        this.particles.push({
+          x: x + Math.cos(a) * 26,
+          y: y + Math.sin(a) * 26,
+          vx: Math.cos(a) * sp,
+          vy: Math.sin(a) * sp,
+          life: 26,
+          maxLife: 26,
+          color: palette.missile,
+          size: 2.5,
+          decay: 0.97,
+        });
+      }
+      this.burst(x, y, color, 6, 4);
+    } else {
+      // dash
+      this.ghostRings.push({ x, y, r: 10, vr: 8, life: 14, maxLife: 14, color });
+      this.burst(x, y, color, 10, 5);
+    }
+  }
+
+  /** Grow + fade rival skill echoes. */
+  updateGhostRings() {
+    for (let i = this.ghostRings.length - 1; i >= 0; i -= 1) {
+      const r = this.ghostRings[i];
+      r.r += r.vr;
+      r.life -= 1;
+      if (r.life <= 0) this.ghostRings.splice(i, 1);
+    }
+  }
+
+  /** Glide ghosts toward their latest broadcast targets (3s cadence). */
+  updateRivals() {
+    for (const g of this.rivals) {
+      g.x += (g.tx - g.x) * 0.12;
+      g.y += (g.ty - g.y) * 0.12;
+      if (Math.abs(g.tx - g.x) < 0.5) g.x = g.tx;
+      if (Math.abs(g.ty - g.y) < 0.5) g.y = g.ty;
+    }
   }
 
   // --- world ----------------------------------------------------------------
@@ -498,6 +616,7 @@ export class Game {
     this.player.isDashing = true;
     this.player.dashTime = this.character.dash?.duration ?? DASH.duration;
     this.player.dashAngle = angle;
+    this.fx = { k: 'dash', a: angle, s: ++this.fxSeq };
 
     for (let i = 0; i < DASH.trailCount; i += 1) {
       this.burst(
@@ -555,6 +674,7 @@ export class Game {
 
     this.burst(this.player.x, this.player.y, palette.missile, 15, 5);
     this.emit('sfx', { name: 'missile' });
+    this.fx = { k: 'missiles', a: this.player.angle, s: ++this.fxSeq };
     this.movePlayer(
       -Math.cos(this.player.angle) * MISSILE.recoil,
       -Math.sin(this.player.angle) * MISSILE.recoil,
@@ -566,6 +686,8 @@ export class Game {
     if (!this.running || this.paused) return;
     if (this.shockCooldown > 0) return;
     if (!this.spendEnergy(this.character.ultimate?.energyCost ?? SHOCK.energyCost)) return;
+    // Mark for multiplayer ghosts: rivals render this ultimate's visual.
+    this.fx = { k: 'shock', a: this.player.angle, s: ++this.fxSeq };
     const ult = this.character.ultimate?.id ?? 'shock';
     if (ult === 'blink') return this.ultBlink();
     if (ult === 'charge') return this.ultCharge();
@@ -808,6 +930,8 @@ export class Game {
   ultAnnihilator() {
     this.shockCooldown = this.ultCooldown();
     this.beamTimer = 300;
+    this.beamLen = 0;
+    this.beamWall = false;
     this.burst(this.player.x, this.player.y, palette.danger, 40, 12);
     this.emit('notice', { text: 'Annihilator deployed — hold aim', tone: 'danger' });
     this.emit('shake', { magnitude: 'medium' });
@@ -890,7 +1014,11 @@ export class Game {
 
   spawnEnemy(forceType = null) {
     if (this.enemies.length >= SPAWN.maxEnemies) return;
-    const angle = this.random() * Math.PI * 2;
+    // Sabotage intake (forced type) is player-driven: draw from the local
+    // stream so it never shifts the shared spawn schedule. Scheduled waves
+    // stay on the world stream, identical for every room mate on this seed.
+    const R = forceType ? () => this.rlocal() : () => this.random();
+    const angle = R() * Math.PI * 2;
     const dist = Math.max(this.camera.width, this.camera.height) / 2 + 100;
     const x = clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD_WIDTH - 50);
     const y = clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD_HEIGHT - 50);
@@ -909,17 +1037,17 @@ export class Game {
       x,
       y,
       radius: type.radius ?? 15,
-      speed: Math.min(SPAWN.maxSpeed, type.speed + this.wave * 0.08 + tier * 0.3 + this.random() * 0.3),
+      speed: Math.min(SPAWN.maxSpeed, type.speed + this.wave * 0.08 + tier * 0.3 + R() * 0.3),
       health,
       maxHealth: health,
       color: type.color,
       shape: type.shape,
-      pulse: this.random() * Math.PI * 2,
+      pulse: R() * Math.PI * 2,
       type,
       buff: type.buff,
       drop: type.drop ?? null,
       behavior: type.behavior ?? 'chase',
-      seed: this.random() * 1000,
+      seed: R() * 1000,
       state: 'chase',
       stateTimer: 0,
       lockAngle: 0,
@@ -950,7 +1078,7 @@ export class Game {
       buff: null,
       drop: 'shower',
       behavior: def.behavior,
-      seed: this.random() * 1000,
+      seed: this.rlocal() * 1000, // boss timing is kill-driven: keep off the shared stream
       state: 'chase',
       stateTimer: def.minionInterval ?? 120,
       lockAngle: 0,
@@ -986,8 +1114,8 @@ export class Game {
       for (let k = 0; k < 2; k += 1) {
         if (this.enemies.length >= SPAWN.maxEnemies) break;
         this.enemies.push({
-          x: clamp(e.x + (this.random() - 0.5) * 40, 30, WORLD_WIDTH - 30),
-          y: clamp(e.y + (this.random() - 0.5) * 40, 30, WORLD_HEIGHT - 30),
+          x: clamp(e.x + (this.rlocal() - 0.5) * 40, 30, WORLD_WIDTH - 30),
+          y: clamp(e.y + (this.rlocal() - 0.5) * 40, 30, WORLD_HEIGHT - 30),
           radius: 14,
           speed: Math.min(SPAWN.maxSpeed, 1.4 + this.wave * 0.1),
           health: 1,
@@ -999,7 +1127,7 @@ export class Game {
           buff: null,
           drop: null,
           behavior: 'chase',
-          seed: this.random() * 1000,
+          seed: this.rlocal() * 1000,
           state: 'chase',
           stateTimer: 0,
           lockAngle: 0,
@@ -1014,8 +1142,8 @@ export class Game {
       for (let k = 0; k < 3; k += 1) {
         if (this.enemies.length >= SPAWN.maxEnemies) break;
         this.enemies.push({
-          x: clamp(e.x + (this.random() - 0.5) * 90, 30, WORLD_WIDTH - 30),
-          y: clamp(e.y + (this.random() - 0.5) * 90, 30, WORLD_HEIGHT - 30),
+          x: clamp(e.x + (this.rlocal() - 0.5) * 90, 30, WORLD_WIDTH - 30),
+          y: clamp(e.y + (this.rlocal() - 0.5) * 90, 30, WORLD_HEIGHT - 30),
           radius: 16,
           speed: Math.min(SPAWN.maxSpeed, ENEMY_TYPES.CHARGER.speed + 1),
           health: 2,
@@ -1027,7 +1155,7 @@ export class Game {
           buff: null,
           drop: null,
           behavior: 'charger',
-          seed: this.random() * 1000,
+          seed: this.rlocal() * 1000,
           state: 'chase',
           stateTimer: 60,
           lockAngle: 0,
@@ -1044,8 +1172,8 @@ export class Game {
       this.dropPickup(e.x - 30, e.y, 'repair');
       this.dropPickup(e.x + 30, e.y, 'energy');
       this.dropPickup(e.x, e.y - 30, 'magnet');
-    } else if (!e.isBoss && this.random() < 0.04) {
-      this.dropPickup(e.x, e.y, this.random() < 0.5 ? 'energy' : 'repair');
+    } else if (!e.isBoss && this.rlocal() < 0.04) {
+      this.dropPickup(e.x, e.y, this.rlocal() < 0.5 ? 'energy' : 'repair');
     }
 
     // Combo + score multiplier (Veteran hulls stretch the window / payout).
@@ -1247,6 +1375,8 @@ export class Game {
     this.updateFiring();
     this.updatePlayer();
     if (!this.running) return; // player may have died
+    this.updateRivals();
+    this.updateGhostRings();
     this.updateAura();
     this.updateBeam();
     this.updateBullets();
@@ -1438,13 +1568,38 @@ export class Game {
   }
 
   // Titan Annihilator siege mode: rooted ship, aimable piercing beam.
+  // No range limit — the lance runs until it bites a wall or the world edge.
+  beamCast() {
+    const a = this.player.angle;
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    const maxLen = Math.hypot(WORLD_WIDTH, WORLD_HEIGHT);
+    const STEP = 20;
+    for (let d = STEP; d <= maxLen; d += STEP) {
+      const x = this.player.x + ca * d;
+      const y = this.player.y + sa * d;
+      if (x < 0 || x > WORLD_WIDTH || y < 0 || y > WORLD_HEIGHT) {
+        return { len: Math.max(0, d - STEP), wall: false };
+      }
+      if (this.hitsObstacle(x, y, 6)) return { len: Math.max(0, d - STEP), wall: true };
+    }
+    return { len: maxLen, wall: false };
+  }
+
   updateBeam() {
-    if (this.beamTimer <= 0) return;
+    if (this.beamTimer <= 0) {
+      this.beamLen = 0;
+      this.beamWall = false;
+      return;
+    }
     this.beamTimer -= 1;
     const a0 = this.player.angle;
     const ca = Math.cos(a0);
     const sa = Math.sin(a0);
-    const LEN = 900;
+    const cast = this.beamCast();
+    const LEN = cast.len;
+    this.beamLen = LEN;
+    this.beamWall = cast.wall;
     const HALF = 70;
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const e = this.enemies[i];
@@ -1458,14 +1613,24 @@ export class Game {
       if ((this.tick + i) % 10 === 0) this.burst(e.x, e.y, palette.danger, 1, 3);
       if (e.health <= 0) this.killEnemy(i, { viaShock: true });
     }
-    if (this.tick % 3 === 0) {
-      const d = 60 + ((this.tick * 37) % 800);
+    if (this.tick % 3 === 0 && LEN > 60) {
+      const d = 60 + ((this.tick * 37) % Math.max(61, Math.floor(LEN - 60)));
       this.burst(
         this.player.x + ca * d,
         this.player.y + sa * d,
         this.tick % 6 === 0 ? palette.flash : palette.danger,
         1,
         2,
+      );
+    }
+    // Impact flare where the beam bites the wall.
+    if (cast.wall && this.tick % 4 === 0) {
+      this.burst(
+        this.player.x + ca * LEN,
+        this.player.y + sa * LEN,
+        palette.missile,
+        2,
+        3,
       );
     }
   }

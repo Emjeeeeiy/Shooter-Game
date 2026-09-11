@@ -51,6 +51,16 @@ async function timed(promise) {
 
 function cleanRoom(raw) {
   if (!raw || typeof raw !== 'object') return null;
+  const rawMembers = raw.members && typeof raw.members === 'object' ? raw.members : {};
+  const members = {};
+  for (const [id, info] of Object.entries(rawMembers)) {
+    if (!info || typeof info !== 'object') continue;
+    // Passthrough + light photo sanitize (profile pics are small base64).
+    members[id] = {
+      ...info,
+      photo: typeof info.photo === 'string' ? info.photo : '',
+    };
+  }
   return {
     code: String(raw.code ?? ''),
     host: raw.host ?? null,
@@ -62,16 +72,22 @@ function cleanRoom(raw) {
     map: ['grid', 'debris', 'pillars', 'void'].includes(raw.map) ? raw.map : 'grid',
     seed: Number(raw.seed) || null,
     createdAt: Number(raw.createdAt) || 0,
-    members: raw.members && typeof raw.members === 'object' ? raw.members : {},
+    // Synced gun-time: all clients start ticking from this wall-clock moment.
+    startsAt: Number(raw.startsAt) || 0,
+    members,
     live: raw.live && typeof raw.live === 'object' ? raw.live : {},
   };
 }
 
-export async function createRoom(uid, name, ship, mode = 'arcade') {
+function cleanPhoto(photo) {
+  return String(photo ?? '').slice(0, 450 * 1024);
+}
+
+export async function createRoom(uid, name, ship, mode = 'arcade', photo = '') {
   const code = genCode();
   const ref = roomRef(code);
   const exists = await timed(getDoc(ref));
-  if (exists.exists()) return createRoom(uid, name, ship, mode); // collision — retry
+  if (exists.exists()) return createRoom(uid, name, ship, mode, photo); // collision — retry
   await timed(
     setDoc(ref, {
       code,
@@ -82,7 +98,7 @@ export async function createRoom(uid, name, ship, mode = 'arcade') {
       map: 'grid',
       createdAt: Date.now(),
       members: {
-        [uid]: { name: name.slice(0, 20), ready: false, ship, joinedAt: Date.now() },
+        [uid]: { name: name.slice(0, 20), ready: false, ship, photo: cleanPhoto(photo), joinedAt: Date.now() },
       },
       live: {},
     }),
@@ -90,7 +106,7 @@ export async function createRoom(uid, name, ship, mode = 'arcade') {
   return code;
 }
 
-export async function joinRoom(code, uid, name, ship) {
+export async function joinRoom(code, uid, name, ship, photo = '') {
   const ref = roomRef(code);
   const snap = await timed(getDoc(ref));
   if (!snap.exists()) throw new Error('Room not found. Check the code.');
@@ -104,12 +120,18 @@ export async function joinRoom(code, uid, name, ship) {
           name: name.slice(0, 20),
           ready: false,
           ship,
+          photo: cleanPhoto(photo),
           joinedAt: Date.now(),
         },
       }),
     );
   } else {
-    await timed(updateDoc(ref, { [`members.${uid}.ship`]: ship }));
+    await timed(
+      updateDoc(ref, {
+        [`members.${uid}.ship`]: ship,
+        [`members.${uid}.photo`]: cleanPhoto(photo),
+      }),
+    );
   }
   return room.code;
 }
@@ -141,6 +163,12 @@ export async function toggleReady(code, uid, ready) {
 
 export async function setRoomShip(code, uid, ship) {
   await timed(updateDoc(roomRef(code), { [`members.${uid}.ship`]: ship }));
+}
+
+export async function setRoomPhoto(code, uid, photo) {
+  await timed(
+    updateDoc(roomRef(code), { [`members.${uid}.photo`]: String(photo ?? '').slice(0, 450 * 1024) }),
+  );
 }
 
 const MAP_IDS = ['grid', 'debris', 'pillars', 'void'];
@@ -186,6 +214,8 @@ export async function startMatch(code) {
         status: 'playing',
         seed: Math.floor(Math.random() * 2147483646) + 1,
         map: pick,
+        // 3s gun-time so every client starts tick 0 together.
+        startsAt: Date.now() + 3000,
         live,
       },
       { merge: true },
@@ -204,12 +234,25 @@ export async function backToRoomLobby(code) {
   await timed(updateDoc(roomRef(code), { status: 'lobby', live: {} }));
 }
 
-export async function updateLiveScore(code, uid, { score, wave, name }) {
+export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, ship, fx }) {
   const fields = {
     [`live.${uid}.score`]: Math.floor(Number(score) || 0),
     [`live.${uid}.wave`]: Math.floor(Number(wave) || 1),
   };
   if (name) fields[`live.${uid}.name`] = String(name).slice(0, 20);
+  // Rival ghost data — rides the same throttled write, zero extra cost.
+  if (Number.isFinite(x)) fields[`live.${uid}.x`] = Math.round(x);
+  if (Number.isFinite(y)) fields[`live.${uid}.y`] = Math.round(y);
+  if (Number.isFinite(a)) fields[`live.${uid}.a`] = Math.round(a * 100) / 100;
+  if (ship) fields[`live.${uid}.ship`] = String(ship).slice(0, 20);
+  // Latest skill/ultimate echo {k, s, a} — receivers dedupe by sequence.
+  if (fx && Number.isInteger(fx.s)) {
+    fields[`live.${uid}.fx`] = {
+      k: fx.k === 'dash' || fx.k === 'missiles' ? fx.k : 'shock',
+      s: fx.s,
+      a: Number.isFinite(fx.a) ? Math.round(fx.a * 100) / 100 : 0,
+    };
+  }
   // Best-effort: the caller already throttles + swallows errors.
   await updateDoc(roomRef(code), fields).catch(() => {});
 }

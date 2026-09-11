@@ -68,20 +68,83 @@ export function usePresence() {
   }
 
   async function sendInvite(toUid, { fromUid, fromName, roomCode, mode }) {
-    await raceTimeout(
-      addDoc(collection(db, 'invites', toUid, 'items'), {
-        fromUid,
-        fromName: String(fromName).slice(0, 20),
-        roomCode: String(roomCode).toUpperCase(),
-        mode: mode === 'versus' ? 'versus' : 'arcade',
-        ts: Date.now(),
-      }),
-    ).catch(() => {
-      throw dbUnreachableError();
-    });
+    if (!toUid || !fromUid) throw new Error('Log in to invite pilots.');
+    try {
+      await raceTimeout(
+        addDoc(collection(db, 'invites', toUid, 'items'), {
+          fromUid,
+          fromName: String(fromName).slice(0, 20),
+          roomCode: String(roomCode).toUpperCase(),
+          mode: mode === 'versus' ? 'versus' : 'arcade',
+          ts: Date.now(),
+        }),
+      );
+    } catch (e) {
+      if (e?.message === 'timeout') throw dbUnreachableError();
+      if (e?.code === 'permission-denied') {
+        throw new Error('Not allowed — publish the latest firestore.rules (Firebase Console → Firestore → Rules).');
+      }
+      throw e;
+    }
   }
 
   return { online, goOnline, goOffline, subscribe, sendInvite };
+}
+
+/** Response to a room invite (accepted / declined), sent back to the inviter. */
+export async function sendInviteReply(toUid, { roomCode, mode, fromUid, fromName, accepted }) {
+  if (!toUid || !fromUid) return;
+  await raceTimeout(
+    addDoc(collection(db, 'inviteReplies', toUid, 'items'), {
+      roomCode: String(roomCode ?? '').toUpperCase(),
+      mode: mode === 'versus' ? 'versus' : 'arcade',
+      fromUid,
+      fromName: String(fromName || 'Pilot').slice(0, 20),
+      accepted: !!accepted,
+      ts: Date.now(),
+    }),
+  ).catch((e) => {
+    if (e?.message === 'timeout') throw dbUnreachableError();
+    throw e;
+  });
+}
+
+/** Incoming invite replies for one user (auto-cleared after reading). */
+export function useInviteReplies() {
+  const replies = ref([]);
+  let unsub = null;
+
+  function watchUid(uid) {
+    if (unsub) unsub();
+    unsub = null;
+    replies.value = [];
+    if (!uid) return;
+    const q = query(
+      collection(db, 'inviteReplies', uid, 'items'),
+      orderBy('ts', 'desc'),
+      limit(20),
+    );
+    unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = [];
+        snap.forEach((d) => {
+          const v = d.data() ?? {};
+          if (v.fromUid) list.push({ id: d.id, ...v });
+        });
+        replies.value = list;
+      },
+      () => {
+        replies.value = [];
+      },
+    );
+  }
+
+  async function dismiss(uid, id) {
+    await deleteDoc(doc(db, 'inviteReplies', uid, 'items', id)).catch(() => {});
+  }
+
+  return { replies, watchUid, dismiss };
 }
 
 /** Incoming room invites for one user. */

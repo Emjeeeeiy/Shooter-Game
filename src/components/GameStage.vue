@@ -20,6 +20,7 @@ import TouchControls from './TouchControls.vue';
 const props = defineProps({
   characterId: { type: String, default: 'vanguard' },
   pilotName: { type: String, default: 'Pilot' },
+  uid: { type: String, default: null },
   mapId: { type: String, default: 'grid' },
   race: { type: Object, default: null }, // { code, uid, name, seed, mode, mapId }
 });
@@ -42,6 +43,9 @@ const {
   doShock,
   setFire,
   setPilotName,
+  getSelf,
+  setRivals,
+  getFx,
   doInject,
   doGift,
   setMinimapEl,
@@ -53,11 +57,16 @@ const {
 
 const { save, isBest } = useLeaderboard();
 
-const willBeBest = computed(() => hud.gameOver && isBest(hud.finalScore));
+const willBeBest = computed(
+  () => hud.gameOver && isBest(hud.finalScore, props.pilotName, props.uid ?? props.race?.uid ?? null),
+);
 
-function onSave(name) {
-  save(name, hud.finalScore, hud.finalWave, hud.finalStats ?? {});
-  emit('run-saved', { name, score: hud.finalScore, wave: hud.finalWave, stats: hud.finalStats ?? {} });
+function onSave() {
+  // Save under the signed-in account: username + uid, one entry per account.
+  const name = props.pilotName || props.race?.name || 'Pilot';
+  const uid = props.uid ?? props.race?.uid ?? null;
+  save(name, hud.finalScore, hud.finalWave, hud.finalStats ?? {}, uid);
+  emit('run-saved', { name, score: hud.finalScore, wave: hud.finalWave, stats: hud.finalStats ?? {}, uid });
   // Keep the game-over overlay open so Retry / Change ship stay available.
 }
 
@@ -66,6 +75,25 @@ let finishSent = false;
 let lastLiveSent = 0;
 let lastSentScore = -1;
 let lastSentWave = -1;
+let lastSentX = null;
+let lastSentY = null;
+let lastFxSent = -1;
+let fxTimer = null;
+
+function flushFx() {
+  if (!props.race || !hud.running || hud.gameOver) return;
+  const fx = getFx();
+  if (!fx || !Number.isInteger(fx.s) || fx.s === lastFxSent) return;
+  lastFxSent = fx.s;
+  const self = getSelf();
+  updateLiveScore(props.race.code, props.race.uid, {
+    score: hud.score,
+    wave: hud.wave,
+    name: props.race.name,
+    ...self,
+    fx: { k: fx.k, s: fx.s, a: fx.a },
+  }).catch(() => {});
+}
 
 watch(
   () => hud.running,
@@ -75,6 +103,13 @@ watch(
       lastLiveSent = 0;
       lastSentScore = -1;
       lastSentWave = -1;
+      lastSentX = null;
+      lastSentY = null;
+      lastFxSent = -1;
+      if (!fxTimer) fxTimer = setInterval(flushFx, 1000);
+    } else if (fxTimer) {
+      clearInterval(fxTimer);
+      fxTimer = null;
     }
   },
 );
@@ -85,16 +120,31 @@ watch(
     if (!props.race || !hud.running || hud.gameOver) return;
     const now = Date.now();
     if (now - lastLiveSent < 3000) return;
-    // Firestore bills per write — only broadcast actual changes.
-    if (score === lastSentScore && hud.wave === lastSentWave) return;
+    const self = getSelf();
+    // Firestore bills per write — broadcast at most every 3s, and only when
+    // the score changed or the ship actually moved (>40px). Positions ride
+    // the same write so rival ghosts cost nothing extra.
+    const moved =
+      lastSentX == null ||
+      Math.hypot((self.x ?? 0) - lastSentX, (self.y ?? 0) - lastSentY) > 40;
+    if (score === lastSentScore && hud.wave === lastSentWave && !moved) return;
     lastLiveSent = now;
     lastSentScore = score;
     lastSentWave = hud.wave;
-    updateLiveScore(props.race.code, props.race.uid, {
+    lastSentX = self.x ?? null;
+    lastSentY = self.y ?? null;
+    const payload = {
       score,
       wave: hud.wave,
       name: props.race.name,
-    }).catch(() => {});
+      ...self,
+    };
+    const fx = getFx();
+    if (fx && Number.isInteger(fx.s) && fx.s !== lastFxSent) {
+      payload.fx = { k: fx.k, s: fx.s, a: fx.a };
+      lastFxSent = fx.s;
+    }
+    updateLiveScore(props.race.code, props.race.uid, payload).catch(() => {});
   },
 );
 
@@ -122,6 +172,24 @@ const rivalIds = computed(() => {
   if (!props.race) return [];
   return Object.keys(raceRoom.value?.members ?? {}).filter((id) => id !== props.race.uid);
 });
+
+// --- same-arena rivals: room mates appear as ghost ships ---------------------
+// Both clients generate the identical seeded battlefield, so broadcast
+// positions land in the right places. Ghosts are visual only.
+watch(
+  () => raceRoom.value?.live,
+  (live) => {
+    if (!props.race) return;
+    const ghosts = [];
+    for (const [id, s] of Object.entries(live ?? {})) {
+      if (id === props.race.uid || s?.done) continue;
+      if (!Number.isFinite(s?.x) || !Number.isFinite(s?.y)) continue;
+      ghosts.push({ uid: id, x: s.x, y: s.y, a: s.a, name: s.name, ship: s.ship, fx: s.fx });
+    }
+    setRivals(ghosts);
+  },
+  { immediate: true },
+);
 
 // Versus: every 5 kills sends a charger at each rival.
 watch(
@@ -212,17 +280,56 @@ function onToggleMusic() {
   sfx.play('click');
 }
 
+const syncWait = ref(0);
+let syncTimer = null;
+let syncClock = null;
+
+function beginRun() {
+  setPilotName(props.pilotName);
+  start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId);
+  if (isPortraitPhone.value && hud.running && !hud.paused && !hud.gameOver) togglePause();
+}
+
 onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
   window.addEventListener('resize', checkOrientation);
   window.addEventListener('orientationchange', checkOrientation);
   checkOrientation();
-  setPilotName(props.pilotName);
-  start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId);
-  if (isPortraitPhone.value && hud.running && !hud.paused && !hud.gameOver) togglePause();
+  const gunDelay = (props.race?.startsAt ?? 0) - Date.now();
+  if (props.race && gunDelay > 0) {
+    // Synced room start: hold on the gun-time so every client ticks from
+    // the same moment on the identical seeded arena.
+    syncWait.value = Math.ceil(gunDelay / 1000);
+    syncClock = setInterval(() => {
+      const left = Math.max(0, Math.ceil(((props.race?.startsAt ?? 0) - Date.now()) / 1000));
+      syncWait.value = left;
+      if (left <= 0 && syncClock) {
+        clearInterval(syncClock);
+        syncClock = null;
+      }
+    }, 250);
+    syncTimer = setTimeout(() => {
+      syncWait.value = 0;
+      beginRun();
+    }, gunDelay);
+  } else {
+    beginRun();
+  }
 });
 onBeforeUnmount(() => {
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
+  if (syncClock) {
+    clearInterval(syncClock);
+    syncClock = null;
+  }
+  if (fxTimer) {
+    clearInterval(fxTimer);
+    fxTimer = null;
+  }
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
   window.removeEventListener('resize', checkOrientation);
   window.removeEventListener('orientationchange', checkOrientation);
@@ -307,6 +414,15 @@ const shakeClass = computed(() => {
         <Banner :banner="banner" :notice="notice" />
       </div>
 
+      <div
+        v-if="syncWait > 0"
+        class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-surface/85 backdrop-blur-sm"
+      >
+        <div class="text-5xl font-semibold text-accent tabular-nums">{{ syncWait }}</div>
+        <div class="text-sm font-medium text-zinc-300">Entering shared arena…</div>
+        <p class="text-[12px] text-zinc-500">Synced start — same map, same waves.</p>
+      </div>
+
       <TouchControls
         v-if="hud.running && !hud.paused && !hud.gameOver"
         @move="(x, y) => setTouchMove(x, y)"
@@ -334,6 +450,7 @@ const shakeClass = computed(() => {
         :stats="hud.finalStats"
         :is-best="willBeBest"
         :race="!!race"
+        :pilot-name="pilotName"
         @save="onSave"
         @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId)"
         @lobby="onLobby"
