@@ -6,6 +6,7 @@ defineProps({
   score: { type: Number, required: true },
   wave: { type: Number, required: true },
   musicOn: { type: Boolean, default: true },
+  pausedBy: { type: String, default: '' },
 });
 </script>
 
@@ -19,14 +20,17 @@ defineProps({
           Score <span class="font-bold text-zinc-200 tabular-nums">{{ score.toLocaleString() }}</span>
           · Wave <span class="font-bold text-zinc-200 tabular-nums">{{ wave }}</span>
         </p>
+        <p v-if="pausedBy" class="font-ui mt-2 text-[12px] font-semibold text-accent">
+          ⏸ {{ pausedBy }} paused the match — resume unpauses everyone.
+        </p>
 
         <div class="mt-6 space-y-2">
           <button
             type="button"
-            class="font-ui w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold tracking-wider text-surface transition-colors hover:brightness-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            class="font-ui w-full rounded-xl bg-accent px-4 py-2.5 text-sm font-bold tracking-wider text-ink transition-colors hover:brightness-110 active:scale-95 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
             @click="$emit('resume')"
           >
-            Resume <kbd class="ml-1 border-black/20 bg-black/10 text-surface">P</kbd>
+            Resume <kbd class="ml-1 border-black/20 bg-black/10 text-ink">P</kbd>
           </button>
           <button
             type="button"

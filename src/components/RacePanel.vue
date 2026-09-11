@@ -36,7 +36,7 @@ const standings = computed(() => {
         :class="s.id === myUid ? 'font-bold text-accent' : 'text-zinc-300'"
       >
         <span class="w-3 text-zinc-500">{{ i + 1 }}</span>
-        <span class="max-w-[90px] truncate">{{ s.name }}</span>
+        <span class="max-w-22.5 truncate">{{ s.name }}</span>
         <span class="ml-auto">{{ s.score.toLocaleString() }}</span>
         <UiIcon v-if="s.done" name="check" cls="h-3 w-3 text-shock" />
       </li>

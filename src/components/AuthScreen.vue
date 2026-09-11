@@ -63,7 +63,7 @@ function offline() {
     <!-- Card -->
     <div class="panel-elevated mt-7 w-full p-7">
       <!-- Mode tabs -->
-      <div class="grid grid-cols-2 gap-1 rounded-xl p-1" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
+      <div class="grid grid-cols-2 gap-1 rounded-xl border border-white/[0.06] bg-white/[0.04] p-1">
         <button
           type="button"
           class="rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-200"

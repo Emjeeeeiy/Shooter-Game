@@ -26,6 +26,16 @@ const current = computed(
 
 <template>
   <div class="w-full max-w-5xl">
+    <div class="flex w-full justify-start">
+      <button
+        type="button"
+        class="btn-ghost gap-1.5 py-1.5 text-xs"
+        @click="$emit('back')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+    </div>
     <!-- Header -->
     <div class="text-center">
       <div class="label">Neon Strike — Hangar</div>
@@ -49,10 +59,10 @@ const current = computed(
           v-for="c in CHARACTER_LIST"
           :key="c.id"
           type="button"
-          class="group relative flex flex-col items-center gap-2 rounded-2xl border p-4 text-center transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          class="group relative flex flex-col items-center gap-2 rounded-2xl border border-white/[0.06] bg-panel/80 p-4 text-center transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           :style="c.id === selectedId
-            ? `background: rgba(14,14,20,0.95); border-color: ${c.color}50; box-shadow: 0 0 20px ${c.color}20;`
-            : 'background: rgba(14,14,20,0.8); border-color: rgba(255,255,255,0.06);'"
+            ? `background: color-mix(in srgb, ${c.color} 14%, var(--color-panel)); border-color: ${c.color}50; box-shadow: 0 0 20px ${c.color}20;`
+            : ''"
           @click="$emit('select', c.id)"
         >
           <!-- Selected ring pulse -->
@@ -70,7 +80,7 @@ const current = computed(
 
       <!-- Ship details card -->
       <div class="panel-elevated p-6 sm:p-7">
-        <div class="flex flex-wrap items-center gap-4 pb-5 border-b" style="border-color: rgba(255,255,255,0.06);">
+        <div class="flex flex-wrap items-center gap-4 border-b border-white/[0.06] pb-5">
           <div class="relative">
             <div class="rounded-2xl p-3" :style="`background: ${current.color}18; border: 1px solid ${current.color}30;`">
               <ShipPreview :id="current.id" :color="current.color" />
@@ -85,9 +95,9 @@ const current = computed(
         <p class="mt-4 text-[13px] leading-relaxed text-zinc-400">{{ current.desc }}</p>
 
         <!-- Abilities -->
-        <div class="mt-4 space-y-2.5 border-t pt-4" style="border-color: rgba(255,255,255,0.06);">
+        <div class="mt-4 space-y-2.5 border-t border-white/[0.06] pt-4">
           <div class="flex gap-2 items-start">
-            <span class="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase" style="background: rgba(255,255,255,0.06); color: #a1a1aa;">Passive</span>
+            <span class="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-bold text-zinc-400 uppercase">Passive</span>
             <div>
               <span class="text-[13px] font-semibold text-zinc-200">{{ current.passive.name }}</span>
               <span class="ml-1.5 text-[12px] text-zinc-500">{{ current.passive.desc }}</span>
@@ -102,13 +112,13 @@ const current = computed(
             </div>
           </div>
           <div class="flex gap-2 items-start">
-            <span class="mt-0.5 shrink-0 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase" style="background: rgba(255,255,255,0.06); color: #a1a1aa;">Kit</span>
+            <span class="mt-0.5 shrink-0 rounded-md bg-white/[0.06] px-2 py-0.5 text-[10px] font-bold text-zinc-400 uppercase">Kit</span>
             <span class="text-[12px] text-zinc-500">{{ current.kit }}</span>
           </div>
         </div>
 
         <!-- Stats bars -->
-        <div class="mt-4 space-y-2.5 border-t pt-4" style="border-color: rgba(255,255,255,0.06);">
+        <div class="mt-4 space-y-2.5 border-t border-white/[0.06] pt-4">
           <div v-for="s in STAT_ROWS" :key="s.key" class="flex items-center gap-3">
             <span class="label w-18 shrink-0 text-right">{{ s.label }}</span>
             <div class="flex flex-1 gap-1">
@@ -118,7 +128,8 @@ const current = computed(
                 class="h-1.5 flex-1 rounded-full transition-all duration-300"
                 :style="i <= current.stats[s.key]
                   ? `background: ${current.color}; box-shadow: 0 0 4px ${current.color}80;`
-                  : 'background: rgba(255,255,255,0.08);'"
+                  : ''"
+                :class="i <= current.stats[s.key] ? '' : 'bg-white/[0.08]'"
               />
             </div>
             <span class="w-4 text-right text-[11px] text-zinc-600 tabular-nums">{{ current.stats[s.key] }}/5</span>
@@ -160,10 +171,10 @@ const current = computed(
           v-for="mp in MAP_PICKS"
           :key="mp.id"
           type="button"
-          class="group relative overflow-hidden rounded-2xl border p-1 text-left transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          class="group relative overflow-hidden rounded-2xl border border-white/[0.06] p-1 text-left transition-all duration-200 focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
           :style="mapPick === mp.id
             ? 'border-color: rgba(56,189,248,0.4); box-shadow: 0 0 20px rgba(56,189,248,0.1);'
-            : 'border-color: rgba(255,255,255,0.06);'"
+            : ''"
           @click="$emit('map-pick', mp.id); $emit('launch')"
         >
           <MapPreview :map-id="mp.id" />

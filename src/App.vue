@@ -10,7 +10,7 @@ import FriendsScreen from './components/FriendsScreen.vue';
 import ProfileScreen from './components/ProfileScreen.vue';
 import SettingsScreen from './components/SettingsScreen.vue';
 import RoomsScreen from './components/RoomsScreen.vue';
-import { CHARACTER_LIST } from './game/constants.js';
+import { CHARACTER_LIST, CHARACTERS } from './game/constants.js';
 import { initAnalytics } from './game/firebase.js';
 import { useAuth } from './composables/useAuth.js';
 import { useFriendList, useFriendRequests } from './composables/useFriends.js';
@@ -30,7 +30,6 @@ const mapPick = ref('grid');
 const runMapId = ref('grid');
 const runShipId = ref('vanguard');
 const runId = ref(0);
-const roomsRef = ref(null);
 const race = ref(null); // { code, uid, name, seed, mode } when racing
 const roomCode = ref(''); // rejoin target for the rooms screen
 const nameOverride = ref('');
@@ -38,7 +37,7 @@ const best = ref(0);
 
 const { user, authReady, offline, logout, rename, backOnline } = useAuth();
 const { photo: profilePhoto, load: loadProfile, saveName: saveProfileName, recordGame, resetProfile } = useProfile();
-const { settings, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps } = useSettings();
+const { settings, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme } = useSettings();
 const { submitScore, personalBest } = useCloudBoard();
 
 // --- online presence + invites + friend requests ------------------------------
@@ -105,9 +104,23 @@ function clearNotifs() {
 }
 
 function goNotif(n) {
-  if (n.target) screen.value = n.target;
+  if (n.target === 'friends') overlay.value = 'friends';
+  else if (n.target) screen.value = n.target;
   dismissNotif(n.id);
   showNotifs.value = false;
+}
+
+// Modal overlays (profile / friends / settings) float above the current
+// page — closing one returns to exactly where you were (even mid-room).
+const overlay = ref(null);
+
+function openOverlay(name) {
+  overlay.value = overlay.value === name ? null : name;
+  showNotifs.value = false;
+}
+
+function closeOverlay() {
+  overlay.value = null;
 }
 
 // Personal-best tracking: snapshot at run start, compare at run end.
@@ -300,6 +313,11 @@ onMounted(() => {
   syncMusic();
   window.addEventListener('pointerdown', music.unlock, { once: true });
   window.addEventListener('keydown', music.unlock, { once: true });
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (showNotifs.value) showNotifs.value = false;
+    else if (overlay.value) closeOverlay();
+  });
 });
 
 function syncMusic() {
@@ -330,6 +348,7 @@ async function onLogout() {
   resetProfile();
   notifs.value = [];
   showNotifs.value = false;
+  overlay.value = null;
   seenReqIds.value = new Set();
   seenFriendUids.value = new Set();
   if (unsubPresence) {
@@ -370,23 +389,6 @@ function onRename(name, done) {
 }
 
 // --- single player ----------------------------------------------------------
-// Header Back button: leaves the room first when inside one.
-const backAction = computed(() => {
-  if (
-    screen.value === 'lobby' ||
-    screen.value === 'settings' ||
-    screen.value === 'profile' ||
-    screen.value === 'friends'
-  ) {
-    return () => {
-      screen.value = 'menu';
-    };
-  }
-  if (screen.value === 'rooms') {
-    return () => roomsRef.value?.goBack();
-  }
-  return null;
-});
 
 function toLobby() {
   race.value = null;
@@ -418,6 +420,7 @@ async function onDeploy(code) {
   let mode = 'arcade';
   let mapId = 'grid';
   let startsAt = 0;
+  let ship = selected.value;
   try {
     const r = await getRoom(code);
     if (r) {
@@ -425,13 +428,17 @@ async function onDeploy(code) {
       mode = r.mode ?? 'arcade';
       mapId = r.map ?? 'grid';
       startsAt = r.startsAt ?? 0;
+      // The room — not the solo hangar — owns the multiplayer ship pick.
+      const roomShip = r.members?.[user.value.uid]?.ship;
+      ship = CHARACTERS[roomShip]?.id ?? selected.value;
     }
   } catch {
     // room read failed — run unseeded on the classic map
   }
-  race.value = { code, uid: user.value.uid, name: pilotName.value, seed, mode, mapId, startsAt };
-  runShipId.value = selected.value;
+  race.value = { code, uid: user.value.uid, name: pilotName.value, seed, mode, mapId, startsAt, ship };
+  runShipId.value = ship;
   snapshotBests();
+  overlay.value = null;
   runId.value += 1;
   screen.value = 'arena';
 }
@@ -504,21 +511,11 @@ async function onRunSaved({ score, wave, stats }) {
     <!-- ─── Global Topbar ──────────────────────────────────────────────── -->
     <header
       v-if="screen !== 'arena'"
-      class="sticky top-0 z-40 w-full"
-      style="background: rgba(8,8,12,0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid rgba(255,255,255,0.05);"
+      class="sticky top-0 z-40 w-full border-b border-white/10 bg-panel/85 backdrop-blur-xl"
     >
       <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <!-- Left: Logo -->
         <div class="flex items-center gap-3">
-          <button
-            v-if="backAction"
-            type="button"
-            class="btn-ghost mr-1 gap-1.5 py-1.5 text-xs"
-            @click="backAction()"
-          >
-            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Back
-          </button>
           <div class="flex items-center gap-2.5">
             <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.25);">
               <span class="h-2 w-2 rounded-full bg-accent" style="box-shadow: 0 0 8px 2px rgba(56,189,248,0.6);" />
@@ -532,6 +529,17 @@ async function onRunSaved({ score, wave, stats }) {
 
         <!-- Right: Action Icons -->
         <div class="flex items-center gap-1.5">
+          <!-- Theme toggle -->
+          <button
+            type="button"
+            :title="settings.theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'"
+            :aria-label="settings.theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'"
+            class="btn-icon"
+            @click="setTheme(settings.theme === 'light' ? 'dark' : 'light')"
+          >
+            <UiIcon :name="settings.theme === 'light' ? 'sun' : 'moon'" cls="h-4 w-4" />
+          </button>
+
           <!-- Notifications bell -->
           <button
             v-if="authReady && (user || offline)"
@@ -546,11 +554,11 @@ async function onRunSaved({ score, wave, stats }) {
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
             </svg>
-            <span
-              v-if="bellCount > 0"
-              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-white tabular-nums"
-              style="box-shadow: 0 0 8px rgba(251,113,133,0.7);"
-            >{{ bellCount }}</span>
+              <span
+                v-if="bellCount > 0"
+                class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold tabular-nums"
+                style="color: #fff; box-shadow: 0 0 8px rgba(251,113,133,0.7);"
+              >{{ bellCount }}</span>
           </button>
 
           <!-- Friends / Search -->
@@ -561,15 +569,15 @@ async function onRunSaved({ score, wave, stats }) {
             title="Search pilots & friends"
             aria-label="Search pilots and friends"
             class="relative btn-icon"
-            :class="screen === 'friends' ? 'btn-icon-active' : ''"
-            @click="screen = 'friends'"
+            :class="overlay === 'friends' ? 'btn-icon-active' : ''"
+            @click="openOverlay('friends')"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
             <span
               v-if="friendPending > 0"
-              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-surface tabular-nums"
+              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-ink tabular-nums"
               style="box-shadow: 0 0 8px rgba(56,189,248,0.7);"
             >{{ friendPending }}</span>
           </button>
@@ -585,8 +593,8 @@ async function onRunSaved({ score, wave, stats }) {
             title="Profile"
             aria-label="View profile"
             class="btn-icon"
-            :class="screen === 'profile' ? 'btn-icon-active' : ''"
-            @click="screen = 'profile'"
+            :class="overlay === 'profile' ? 'btn-icon-active' : ''"
+            @click="openOverlay('profile')"
           >
             <img
               v-if="profilePhoto"
@@ -607,8 +615,8 @@ async function onRunSaved({ score, wave, stats }) {
             title="Settings"
             aria-label="Open settings"
             class="btn-icon"
-            :class="screen === 'settings' ? 'btn-icon-active' : ''"
-            @click="screen = 'settings'"
+            :class="overlay === 'settings' ? 'btn-icon-active' : ''"
+            @click="openOverlay('settings')"
           >
             <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -618,8 +626,7 @@ async function onRunSaved({ score, wave, stats }) {
           <!-- Pilot name chip (sm+) -->
           <div
             v-if="user && !offline"
-            class="hidden items-center gap-2 rounded-xl px-3 py-1.5 text-[12px] font-medium text-zinc-300 sm:flex"
-            style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);"
+            class="hidden items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] font-medium text-zinc-300 sm:flex"
           >
             <span class="max-w-24 truncate">{{ pilotName }}</span>
           </div>
@@ -628,7 +635,7 @@ async function onRunSaved({ score, wave, stats }) {
     </header>
 
     <!-- ─── Main Content Area ─────────────────────────────────────────── -->
-    <div :class="screen === 'arena' ? 'relative z-10 flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6 px-4 py-8 sm:px-6 lg:py-10'">
+    <div :class="screen === 'arena' ? 'relative z-10 flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6 px-4 py-8 sm:px-6 lg:py-10 app-content'">
 
       <!-- Invite banners (floating, top-center) -->
       <div
@@ -720,13 +727,13 @@ async function onRunSaved({ score, wave, stats }) {
 
       <!-- Friend request nudge (bottom banner) -->
       <div
-        v-if="friendPending > 0 && screen !== 'auth' && screen !== 'arena' && screen !== 'friends'"
+        v-if="friendPending > 0 && screen !== 'auth' && screen !== 'arena' && overlay !== 'friends'"
         class="fixed bottom-4 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 px-4"
       >
         <button
           type="button"
-          class="panel-elevated flex w-full animate-slide-up items-center gap-3 p-4 text-left transition-all hover:border-accent/30"
-          @click="screen = 'friends'"
+          class="panel flex w-full items-center gap-3 p-3 text-left shadow-2xl transition-colors hover:border-accent/50"
+          @click="openOverlay('friends')"
         >
           <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">{{ friendPending }}</span>
           <span class="min-w-0 flex-1 text-sm font-semibold text-zinc-100">{{ friendPending === 1 ? '1 pilot wants to be friends' : `${friendPending} pilots want to be friends` }}</span>
@@ -750,46 +757,9 @@ async function onRunSaved({ score, wave, stats }) {
         :photo="profilePhoto"
         @single="toLobby"
         @multi="toRooms"
-        @settings="screen = 'settings'"
-        @profile="screen = 'profile'"
+        @settings="openOverlay('settings')"
+        @profile="openOverlay('profile')"
         @logout="onLogout"
-      />
-
-      <ProfileScreen
-        v-else-if="screen === 'profile'"
-        :uid="user?.uid ?? null"
-        :pilot-name="pilotName"
-        :email="user?.email ?? ''"
-        :offline="offline"
-        :best="best"
-        :online="onlinePilots"
-        @rename="onRename"
-        @friends="screen = 'friends'"
-        @back="screen = 'menu'"
-      />
-
-      <FriendsScreen
-        v-else-if="screen === 'friends'"
-        :uid="user?.uid ?? null"
-        :pilot-name="pilotName"
-        :photo="profilePhoto"
-        :offline="offline"
-        :online="onlinePilots"
-        @back="screen = 'menu'"
-      />
-
-      <SettingsScreen
-        v-else-if="screen === 'settings'"
-        :settings="settings"
-        :pilot-name="pilotName"
-        :can-rename="canCloud"
-        @toggle-mute="toggleMute(); sfx.setMuted(settings.muted); music.setMuted(settings.muted)"
-        @toggle-music="toggleMusic(); music.setEnabled(settings.music)"
-        @volume="(v) => { setVolume(v); sfx.setVolume(v); music.setVolume(v); }"
-        @toggle-shake="toggleShake"
-        @toggle-fps="toggleFps"
-        @rename="onRename"
-        @back="screen = 'menu'"
       />
 
       <Lobby
@@ -804,11 +774,11 @@ async function onRunSaved({ score, wave, stats }) {
 
       <RoomsScreen
         v-else-if="screen === 'rooms' && user"
-        ref="roomsRef"
         :key="roomCode || 'gate'"
         :uid="user.uid"
         :pilot-name="pilotName"
         :photo="profilePhoto"
+        :initial-ship="selected"
         :rejoin-code="roomCode"
         @deploy="onDeploy"
         @back="roomCode = ''; screen = 'menu'"
@@ -817,7 +787,7 @@ async function onRunSaved({ score, wave, stats }) {
       <div v-else-if="screen === 'arena'" class="h-full w-full min-w-0 flex-1">
         <GameStage
           :key="runId"
-          :character-id="selected"
+          :character-id="race ? (race.ship ?? selected) : selected"
           :pilot-name="pilotName"
           :uid="user?.uid ?? null"
           :map-id="runMapId"
@@ -833,6 +803,53 @@ async function onRunSaved({ score, wave, stats }) {
         {{ canCloud ? 'Scores sync to the global board · ' : 'Scores are stored locally in this browser · ' }}
         <kbd>P</kbd> pause · <kbd>M</kbd> mute · touch supported
       </footer>
+    </div>
+
+    <!-- ─── Modal overlays (float above the current page) ──────────────── -->
+    <div
+      v-if="overlay && screen !== 'auth' && screen !== 'arena'"
+      class="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
+      @click.self="closeOverlay"
+    >
+      <div class="mx-auto flex min-h-full w-full max-w-lg flex-col items-center justify-center px-4 py-8 app-modal">
+        <ProfileScreen
+          v-if="overlay === 'profile'"
+          :uid="user?.uid ?? null"
+          :pilot-name="pilotName"
+          :email="user?.email ?? ''"
+          :offline="offline"
+          :best="best"
+          :online="onlinePilots"
+          @rename="onRename"
+          @friends="overlay = 'friends'"
+          @back="closeOverlay"
+        />
+
+        <FriendsScreen
+          v-else-if="overlay === 'friends'"
+          :uid="user?.uid ?? null"
+          :pilot-name="pilotName"
+          :photo="profilePhoto"
+          :offline="offline"
+          :online="onlinePilots"
+          @back="closeOverlay"
+        />
+
+        <SettingsScreen
+          v-else-if="overlay === 'settings'"
+          :settings="settings"
+          :pilot-name="pilotName"
+          :can-rename="canCloud"
+          @toggle-mute="toggleMute(); sfx.setMuted(settings.muted); music.setMuted(settings.muted)"
+          @toggle-music="toggleMusic(); music.setEnabled(settings.music)"
+          @volume="(v) => { setVolume(v); sfx.setVolume(v); music.setVolume(v); }"
+          @toggle-shake="toggleShake"
+          @toggle-fps="toggleFps"
+          @theme="setTheme"
+          @rename="onRename"
+          @back="closeOverlay"
+        />
+      </div>
     </div>
   </div>
 </template>

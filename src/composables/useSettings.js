@@ -8,6 +8,7 @@ const defaults = {
   music: true,
   shake: true,
   showFps: false,
+  theme: 'dark',
 };
 
 function read() {
@@ -22,6 +23,21 @@ function read() {
 }
 
 const state = reactive(read());
+// Normalize stored value (old installs / typos fall back to dark).
+if (state.theme !== 'light' && state.theme !== 'dark') state.theme = 'dark';
+
+function applyTheme() {
+  if (typeof document === 'undefined') return;
+  document.documentElement.classList.toggle('light', state.theme === 'light');
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', state.theme === 'light' ? '#eef1f6' : '#08080c');
+}
+
+watch(
+  () => state.theme,
+  applyTheme,
+  { immediate: true },
+);
 
 watch(
   state,
@@ -52,5 +68,8 @@ export function useSettings() {
   function toggleFps() {
     state.showFps = !state.showFps;
   }
-  return { settings: state, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps };
+  function setTheme(v) {
+    state.theme = v === 'light' ? 'light' : 'dark';
+  }
+  return { settings: state, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme };
 }

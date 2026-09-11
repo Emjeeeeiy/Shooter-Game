@@ -155,6 +155,9 @@ export function useGame(settings) {
     const g = game.value;
     if (!g) return;
 
+    // Whole game map (canvas) follows the UI theme, live.
+    g.lightMode = settings.theme === 'light';
+
     // Fixed 60Hz steps so the simulation runs at the same speed on any display.
     // When paused, drain the accumulator so resume doesn't jump.
     if (g.paused) {
@@ -276,13 +279,17 @@ export function useGame(settings) {
     );
   }
 
+  function setTouchAimVector(dx, dy) {
+    game.value?.setAimVector(dx, dy);
+  }
+
   // --- public actions -------------------------------------------------------
 
-  const start = (characterId, seed, mapId) => {
+  const start = (characterId, seed, mapId, opts) => {
     sfx.unlock();
     applyAudioSettings();
     sfx.play('click');
-    game.value?.start(characterId, seed, mapId);
+    game.value?.start(characterId, seed, mapId, opts);
   };
   const setCharacter = (id) => game.value?.setCharacter(id);
   const setPilotName = (name) => game.value?.setPilotName(name);
@@ -300,6 +307,9 @@ export function useGame(settings) {
   const setRivals = (list) => game.value?.setRivals(list);
   // Latest skill/ultimate marker {k, a, s} for the multiplayer echo.
   const getFx = () => game.value?.fx ?? null;
+  // Shared-swarm kill outbox / remote apply (arcade rooms).
+  const drainKills = () => (game.value ? game.value.drainKills() : []);
+  const applyRemoteKill = (eid) => game.value?.applyRemoteKill(eid);
   const stop = () => game.value?.stop();
   const togglePause = () => game.value?.togglePause();
   const doDash = () => {
@@ -368,6 +378,8 @@ export function useGame(settings) {
     getSelf,
     setRivals,
     getFx,
+    drainKills,
+    applyRemoteKill,
     doDash,
     doMissiles,
     doShock,

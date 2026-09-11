@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue';
-import { drawShipDetails, traceShip } from '../game/renderer.js';
+import { drawShipDetails, setCanvasTheme, traceShip } from '../game/renderer.js';
 
 // Hangar preview drawn with the exact same path code as the in-game ship,
 // so selection always matches what you fly.
@@ -22,6 +22,7 @@ function render() {
   const ctx = canvas.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
+  setCanvasTheme(document.documentElement.classList.contains('light'));
   ctx.save();
   ctx.translate(W / 2, H / 2);
   ctx.shadowColor = props.color;

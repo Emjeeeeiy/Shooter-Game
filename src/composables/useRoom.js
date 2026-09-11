@@ -72,8 +72,14 @@ function cleanRoom(raw) {
     map: ['grid', 'debris', 'pillars', 'void'].includes(raw.map) ? raw.map : 'grid',
     seed: Number(raw.seed) || null,
     createdAt: Number(raw.createdAt) || 0,
-    // Synced gun-time: all clients start ticking from this wall-clock moment.
+    // Synced gun-time: all clients start ticking from the same wall-clock moment.
     startsAt: Number(raw.startsAt) || 0,
+    // Global match pause: { by, name, at } or null. Anyone pausing pauses
+    // every room mate; anyone resuming clears it for all.
+    pause:
+      raw.pause && typeof raw.pause === 'object' && typeof raw.pause.by === 'string'
+        ? { by: raw.pause.by, name: String(raw.pause.name ?? 'A pilot').slice(0, 20), at: Number(raw.pause.at) || 0 }
+        : null,
     members,
     live: raw.live && typeof raw.live === 'object' ? raw.live : {},
   };
@@ -138,10 +144,13 @@ export async function joinRoom(code, uid, name, ship, photo = '') {
 
 export async function leaveRoom(code, uid) {
   const ref = roomRef(code);
+  const before = await timed(getDoc(ref)).catch(() => null);
+  const heldPause = before?.exists() && before.data()?.pause?.by === uid;
   await timed(
     updateDoc(ref, {
       [`members.${uid}`]: deleteField(),
       [`live.${uid}`]: deleteField(),
+      ...(heldPause ? { pause: deleteField() } : {}),
     }),
   );
   const snap = await timed(getDoc(ref));
@@ -159,6 +168,16 @@ export async function leaveRoom(code, uid) {
 
 export async function toggleReady(code, uid, ready) {
   await timed(updateDoc(roomRef(code), { [`members.${uid}.ready`]: !!ready }));
+}
+
+/** Global pause: set {by, name} to freeze every room mate, null to release. */
+export async function setRoomPause(code, pause) {
+  await timed(
+    updateDoc(
+      roomRef(code),
+      pause ? { pause: { by: pause.by, name: String(pause.name ?? 'A pilot').slice(0, 20), at: Date.now() } } : { pause: deleteField() },
+    ),
+  );
 }
 
 export async function setRoomShip(code, uid, ship) {
@@ -234,7 +253,7 @@ export async function backToRoomLobby(code) {
   await timed(updateDoc(roomRef(code), { status: 'lobby', live: {} }));
 }
 
-export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, ship, fx }) {
+export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, ship, fx, kills }) {
   const fields = {
     [`live.${uid}.score`]: Math.floor(Number(score) || 0),
     [`live.${uid}.wave`]: Math.floor(Number(wave) || 1),
@@ -252,6 +271,12 @@ export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, s
       s: fx.s,
       a: Number.isFinite(fx.a) ? Math.round(fx.a * 100) / 100 : 0,
     };
+  }
+  // Shared-swarm kill ids {eid: ts} — receivers drop their copy, no score.
+  if (kills && typeof kills === 'object') {
+    for (const [id, ts] of Object.entries(kills)) {
+      if (/^[A-Za-z0-9-]{1,64}$/.test(id)) fields[`live.${uid}.kills.${id}`] = Math.floor(Number(ts) || 0);
+    }
   }
   // Best-effort: the caller already throttles + swallows errors.
   await updateDoc(roomRef(code), fields).catch(() => {});

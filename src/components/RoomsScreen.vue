@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
+import { CHARACTERS, CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
 import {
   backToRoomLobby,
   createRoom,
@@ -25,12 +25,14 @@ import {
   useFriendRequests,
 } from '../composables/useFriends.js';
 import MapPreview from './MapPreview.vue';
+import ShipPreview from './ShipPreview.vue';
 import UiIcon from './UiIcon.vue';
 
 const props = defineProps({
   uid: { type: String, required: true },
   pilotName: { type: String, default: 'Pilot' },
   photo: { type: String, default: '' },
+  initialShip: { type: String, default: 'vanguard' },
   rejoinCode: { type: String, default: '' },
 });
 
@@ -38,7 +40,8 @@ const emit = defineEmits(['deploy', 'back']);
 
 const code = ref('');
 const joinInput = ref('');
-const ship = ref('vanguard');
+// Start from the solo hangar pick; the room doc wins once joined.
+const ship = ref(CHARACTERS[props.initialShip]?.id ?? 'vanguard');
 const busy = ref(false);
 const error = ref('');
 const deployed = ref(false);
@@ -308,30 +311,40 @@ function copyCode() {
 </script>
 
 <template>
-  <div class="flex w-full max-w-xl flex-col items-center">
+  <div class="flex w-full max-w-6xl flex-col items-center">
     <!-- Gate: create / join -->
     <template v-if="!code">
+      <div class="flex w-full justify-start">
+        <button
+          type="button"
+          class="btn-ghost gap-1.5 py-1.5 text-xs"
+          @click="goBack"
+        >
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+      </div>
       <div class="label">Multiplayer race</div>
       <h2 class="mt-1 text-3xl font-semibold text-zinc-50">Squad up</h2>
       <p class="mt-2 text-center text-[13px] text-zinc-500">
-        Same arena, same waves, live rival ships and skills — highest score wins.
+        One shared swarm, same waves, live rival ships and skills — highest score wins.
       </p>
 
-      <div class="panel mt-6 w-full p-6">
+      <div class="panel mx-auto mt-6 w-full max-w-xl p-6">
         <button
           type="button"
           :disabled="busy"
-          class="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-surface hover:bg-sky-300 disabled:opacity-60"
+          class="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300 disabled:opacity-60"
           @click="onCreate('arcade')"
         >
           <span v-if="busy">Working…</span>
           <span v-else class="inline-flex items-center justify-center gap-2"><UiIcon name="users" cls="h-4 w-4" />Host Arcade Co-op</span>
         </button>
-        <p class="mt-1.5 text-[11px] text-zinc-600">Same battlefield with live rivals, squad total wins. Boss kills gift repairs to mates.</p>
+        <p class="mt-1.5 text-[11px] text-zinc-600">One shared battlefield — your kills clear enemies off your mates' screens too. Squad total wins. Boss kills gift repairs to mates.</p>
         <button
           type="button"
           :disabled="busy"
-          class="mt-2.5 w-full rounded-lg bg-missile px-4 py-2.5 text-sm font-semibold text-surface hover:brightness-110 disabled:opacity-60"
+          class="mt-2.5 w-full rounded-lg bg-missile px-4 py-2.5 text-sm font-semibold text-ink hover:brightness-110 disabled:opacity-60"
           @click="onCreate('versus')"
         >
           <span v-if="busy">Working…</span>
@@ -374,10 +387,20 @@ function copyCode() {
 
     </template>
 
-    <!-- Inside room -->
+    <!-- Inside room: squad columns around the central lobby -->
     <template v-else>
-      <div class="label">Room {{ code }} · {{ room?.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}</div>
-      <div class="mt-1 flex items-center gap-3">
+      <div class="flex w-full justify-start">
+        <button
+          type="button"
+          class="btn-ghost gap-1.5 py-1.5 text-xs"
+          @click="goBack"
+        >
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+          Back
+        </button>
+      </div>
+      <div class="label text-center">Room {{ code }} · {{ room?.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}</div>
+      <div class="mt-1 flex items-center justify-center gap-3">
         <h2 class="text-3xl font-semibold tracking-[0.2em] text-zinc-50">{{ code }}</h2>
         <button
           type="button"
@@ -387,7 +410,7 @@ function copyCode() {
           Copy
         </button>
       </div>
-      <div v-if="isHost && room?.status === 'lobby'" class="mt-3 flex gap-2">
+      <div v-if="isHost && room?.status === 'lobby'" class="mx-auto mt-3 flex w-full max-w-xs gap-2">
         <button
           type="button"
           class="flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all"
@@ -405,17 +428,69 @@ function copyCode() {
           <span class="inline-flex items-center gap-1.5"><UiIcon name="swords" cls="h-3.5 w-3.5" />Versus</span>
         </button>
       </div>
-      <p class="mt-2 text-[13px] text-zinc-500">
+      <p class="mt-2 text-center text-[13px] text-zinc-500">
         {{ room?.status === 'done' ? 'Match over — final standings.' : isHost ? 'You are the host. Start when the squad is ready.' : 'Waiting for the host to start.' }}
       </p>
 
-      <div class="panel mt-5 w-full p-5">
-        <div class="label">Pilots ({{ members.length }})</div>
+      <div class="mt-5 grid w-full items-start gap-4 lg:grid-cols-[290px_minmax(0,1fr)_560px]">
+        <!-- LEFT: squad invites -->
+        <div class="space-y-4 max-lg:order-3">
+          <section class="panel p-4">
+            <div class="label">Friends — invite</div>
+            <div v-if="!friendsNotInRoom.length" class="mt-1.5 text-[12px] text-zinc-600">
+              No friends outside this room. Add pilots in the lobby, or find more via the search icon up top.
+            </div>
+            <ul v-else class="mt-2 space-y-1.5">
+              <li v-for="f in friendsNotInRoom" :key="f.uid" class="flex items-center gap-2 text-sm">
+                <span
+                  class="h-2 w-2 shrink-0 rounded-full"
+                  :class="onlineIds.has(f.uid) ? 'bg-repair' : 'bg-zinc-700'"
+                  :title="onlineIds.has(f.uid) ? 'Online' : 'Offline'"
+                />
+                <span class="min-w-0 flex-1 truncate font-medium text-zinc-200">{{ f.name }}</span>
+                <button
+                  v-if="!sentIds.has(f.uid)"
+                  type="button"
+                  class="shrink-0 rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
+                  @click="invite(f)"
+                >
+                  Invite
+                </button>
+                <span v-else class="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="panel p-4">
+            <div class="label">Online pilots — invite</div>
+            <div v-if="!othersOnline.length" class="mt-1.5 text-[12px] text-zinc-600">
+              Nobody else online right now.
+            </div>
+            <ul v-else class="mt-2 space-y-1.5">
+              <li v-for="p in othersOnline" :key="p.uid" class="flex items-center gap-2 text-sm">
+                <span class="min-w-0 flex-1 truncate font-medium text-zinc-200">{{ p.name }}</span>
+                <button
+                  v-if="!sentIds.has(p.uid)"
+                  type="button"
+                  class="shrink-0 rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
+                  @click="invite(p)"
+                >
+                  Invite
+                </button>
+                <span v-else class="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
+              </li>
+            </ul>
+          </section>
+        </div>
+
+        <!-- MIDDLE: the lobby -->
+        <div class="panel min-w-0 p-5 max-lg:order-1">
+          <div class="label">Pilots ({{ members.length }})</div>
         <ul class="mt-2 space-y-2">
           <li
             v-for="m in members"
             :key="m.id"
-            class="flex flex-wrap items-center gap-2.5 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2"
+            class="flex flex-wrap items-center gap-2.5 rounded-lg border border-white/5 bg-white/2 px-3 py-2"
           >
             <img
               v-if="m.photo"
@@ -450,7 +525,7 @@ function copyCode() {
               <button
                 v-else-if="incomingByUid.has(m.id)"
                 type="button"
-                class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-surface transition-colors hover:bg-sky-300"
+                class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-ink transition-colors hover:bg-sky-300"
                 @click="onAcceptFriend(incomingByUid.get(m.id))"
               >
                 ACCEPT
@@ -475,97 +550,6 @@ function copyCode() {
         </ul>
         <p v-if="friendMsg" class="mt-2 text-[12px] text-zinc-400">{{ friendMsg }}</p>
 
-        <div class="mt-4">
-          <div class="label">Friends — invite</div>
-          <div v-if="!friendsNotInRoom.length" class="mt-1.5 text-[12px] text-zinc-600">
-            No friends outside this room. Add pilots above, or find more via the search icon up top.
-          </div>
-          <ul v-else class="mt-2 space-y-1.5">
-            <li v-for="f in friendsNotInRoom" :key="f.uid" class="flex items-center gap-2 text-sm">
-              <span
-                class="h-2 w-2 shrink-0 rounded-full"
-                :class="onlineIds.has(f.uid) ? 'bg-repair' : 'bg-zinc-700'"
-                :title="onlineIds.has(f.uid) ? 'Online' : 'Offline'"
-              />
-              <span class="font-medium text-zinc-200">{{ f.name }}</span>
-              <button
-                v-if="!sentIds.has(f.uid)"
-                type="button"
-                class="ml-auto rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
-                @click="invite(f)"
-              >
-                Invite
-              </button>
-              <span v-else class="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
-            </li>
-          </ul>
-        </div>
-
-        <div class="mt-4">
-          <div class="label">Online pilots — invite</div>
-          <div v-if="!othersOnline.length" class="mt-1.5 text-[12px] text-zinc-600">
-            Nobody else online right now.
-          </div>
-          <ul v-else class="mt-2 space-y-1.5">
-            <li v-for="p in othersOnline" :key="p.uid" class="flex items-center gap-2 text-sm">
-              <span class="font-medium text-zinc-200">{{ p.name }}</span>
-              <button
-                v-if="!sentIds.has(p.uid)"
-                type="button"
-                class="ml-auto rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
-                @click="invite(p)"
-              >
-                Invite
-              </button>
-              <span v-else class="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
-            </li>
-          </ul>
-        </div>
-
-        <div class="mt-4">
-          <div class="label">Your ship</div>
-          <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-5">
-            <button
-              v-for="c in CHARACTER_LIST"
-              :key="c.id"
-              type="button"
-              class="rounded-lg border px-2 py-2 text-[12px] font-medium transition-all"
-              :class="ship === c.id ? 'border-accent bg-accent/10 text-zinc-100' : 'border-white/10 text-zinc-500 hover:border-white/25'"
-              @click="ship = c.id"
-            >
-              <span class="mx-auto mb-1 block h-2 w-2 rounded-full" :style="{ background: c.color }" />
-              {{ c.name }}
-            </button>
-          </div>
-        </div>
-
-        <div class="mt-4">
-          <div class="label">Arena map</div>
-          <div
-            v-if="isHost && room?.status === 'lobby'"
-            class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2"
-          >
-            <button
-              v-for="mp in MAP_PICKS"
-              :key="mp.id"
-              type="button"
-              class="rounded-lg border px-2 py-2 text-left transition-all"
-              :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
-              @click="setRoomMap(code, mp.id)"
-            >
-              <MapPreview :map-id="mp.id" class="mb-1.5" />
-              <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
-              <div class="text-[11px] text-zinc-500">{{ mp.desc }}</div>
-            </button>
-          </div>
-          <div v-else class="mt-2 max-w-[320px]">
-            <MapPreview :map-id="shownMap.id" />
-            <p class="mt-1.5 text-[13px] text-zinc-300">
-              {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
-            </p>
-          </div>
-        </div>
-
         <div v-if="room?.status === 'lobby'" class="mt-4 flex gap-2">
           <button
             type="button"
@@ -578,7 +562,7 @@ function copyCode() {
             v-if="isHost"
             type="button"
             :disabled="members.length < 1"
-            class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-surface hover:bg-sky-300 disabled:opacity-60"
+            class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300 disabled:opacity-60"
             @click="onStart"
           >
             Start match
@@ -591,7 +575,7 @@ function copyCode() {
             {{
               room?.mode === 'versus'
                 ? 'Every 5 kills sends chargers at your rivals. Highest score wins.'
-                : 'Same battlefield — squad total counts. Boss kills gift repairs to teammates.'
+                : 'Shared swarm — what you kill dies on every screen. Squad total counts. Boss kills gift repairs to teammates.'
             }}
           </p>
           <ol class="mt-2 space-y-1.5">
@@ -622,7 +606,7 @@ function copyCode() {
           <div class="mt-4 flex gap-2">
             <button
               type="button"
-              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-surface hover:bg-sky-300"
+              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300"
               @click="deployed = true; $emit('deploy', code)"
             >
               Back to run
@@ -666,7 +650,7 @@ function copyCode() {
           <div v-if="isHost" class="mt-4 flex gap-2">
             <button
               type="button"
-              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-surface hover:bg-sky-300"
+              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300"
               @click="onStart"
             >
               Rematch
@@ -684,19 +668,73 @@ function copyCode() {
         <div v-if="allDone && room?.status === 'playing'" class="mt-4">
           <button
             type="button"
-            class="w-full rounded-lg bg-skill px-4 py-2.5 text-sm font-semibold text-surface hover:brightness-110"
+            class="w-full rounded-lg bg-skill px-4 py-2.5 text-sm font-semibold text-ink hover:brightness-110"
             @click="showResults(code)"
           >
             Everyone finished — show results
           </button>
         </div>
 
-        <p v-if="error" class="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-          {{ error }}
-        </p>
+          <p v-if="error" class="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+            {{ error }}
+          </p>
+        </div>
+
+        <!-- RIGHT: loadout (ships beside maps) -->
+        <div class="grid gap-4 max-lg:order-2 sm:grid-cols-2 lg:grid-cols-2">
+          <section class="panel min-w-0 p-4">
+            <div class="label">Your ship</div>
+            <div class="mt-2 grid grid-cols-2 gap-2">
+              <button
+                v-for="c in CHARACTER_LIST"
+                :key="c.id"
+                type="button"
+                class="flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-center transition-all"
+                :class="ship === c.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
+                :title="c.title"
+                @click="ship = c.id"
+              >
+                <ShipPreview :id="c.id" :color="c.color" />
+                <span class="w-full truncate text-[11px] font-semibold" :class="ship === c.id ? 'text-zinc-100' : 'text-zinc-500'">{{ c.name }}</span>
+              </button>
+            </div>
+            <p class="mt-2 text-[11px] text-zinc-600">{{ shipDef(ship).title }} — {{ shipDef(ship).desc }}</p>
+          </section>
+
+          <section class="panel min-w-0 p-4">
+            <div class="label">Arena map</div>
+            <div
+              v-if="isHost && room?.status === 'lobby'"
+              class="mt-2 space-y-2"
+            >
+              <button
+                v-for="mp in MAP_PICKS"
+                :key="mp.id"
+                type="button"
+                class="flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-all"
+                :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
+                @click="setRoomMap(code, mp.id)"
+              >
+                <div class="w-24 shrink-0">
+                  <MapPreview :map-id="mp.id" />
+                </div>
+                <div class="min-w-0">
+                  <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
+                  <div class="mt-0.5 text-[11px] leading-snug text-zinc-500">{{ mp.desc }}</div>
+                </div>
+              </button>
+            </div>
+            <div v-else class="mt-2">
+              <MapPreview :map-id="shownMap.id" />
+              <p class="mt-1.5 text-[13px] text-zinc-300">
+                {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
+              </p>
+            </div>
+          </section>
+        </div>
       </div>
 
-      <p class="mt-4 text-[12px] text-zinc-600">Leaving? Use the Back button in the header — it checks you out of the room.</p>
+      <p class="mt-4 text-center text-[12px] text-zinc-600">Leaving? The Back button above checks you out of the room. Pausing mid-match pauses the whole squad.</p>
     </template>
   </div>
 </template>

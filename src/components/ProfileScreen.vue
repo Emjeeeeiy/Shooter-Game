@@ -107,6 +107,16 @@ async function removePhoto() {
 
 <template>
   <div class="flex w-full max-w-lg flex-col items-center">
+    <div class="flex w-full justify-start">
+      <button
+        type="button"
+        class="btn-ghost gap-1.5 py-1.5 text-xs"
+        @click="emit('back')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+    </div>
     <div class="label">Pilot Profile</div>
     <h2 class="font-display mt-2 text-3xl font-bold text-zinc-50" style="letter-spacing: 0.08em;">PROFILE</h2>
     <p class="font-ui mt-1.5 text-center text-sm font-medium text-zinc-500">
@@ -196,14 +206,14 @@ async function removePhoto() {
             {{ highScore > 0 ? highScore.toLocaleString() : '—' }}
           </div>
         </div>
-        <div class="rounded-2xl p-4 text-center" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+        <div class="rounded-2xl border border-white/8 bg-white/3 p-4 text-center">
           <div class="label">Runs Flown</div>
           <div class="font-display mt-1.5 text-2xl font-bold text-zinc-100 tabular-nums" style="letter-spacing: 0.02em;">{{ gamesPlayed }}</div>
         </div>
       </div>
 
       <!-- Friends widget -->
-      <div class="rounded-2xl p-4" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+      <div class="rounded-2xl border border-white/8 bg-white/3 p-4">
         <div class="flex items-center justify-between">
           <div class="label">Friends ({{ offline ? 0 : addedFriends.length }})</div>
           <button
@@ -221,8 +231,7 @@ async function removePhoto() {
           <div
             v-for="f in addedFriends.slice(0, 5)"
             :key="f.uid"
-            class="flex items-center gap-3 rounded-xl p-2.5"
-            style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);"
+            class="flex items-center gap-3 rounded-xl border border-white/6 bg-white/3 p-2.5"
           >
             <span
               class="h-2 w-2 shrink-0 rounded-full"
@@ -253,7 +262,7 @@ async function removePhoto() {
       </div>
 
       <!-- Most used ship -->
-      <div class="rounded-2xl p-4" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">
+      <div class="rounded-2xl border border-white/8 bg-white/3 p-4">
         <div class="label mb-2">Most used ship</div>
         <div v-if="!mostUsedShip" class="text-[13px] text-zinc-600">No runs recorded yet — fly a mission.</div>
         <div v-else class="flex items-center gap-4">

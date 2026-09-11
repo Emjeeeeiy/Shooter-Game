@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Game, createHudState } from './engine.js';
-import { CHARACTER_LIST, WORLD_HEIGHT, WORLD_WIDTH, dash as DASH, missile as MISSILE, palette, shock as SHOCK } from './constants.js';
+import { CHARACTER_LIST, WORLD_HEIGHT, WORLD_WIDTH, dash as DASH, lightPalette, missile as MISSILE, palette, shock as SHOCK } from './constants.js';
 
 function makeGame() {
   const hud = createHudState();
@@ -845,6 +845,202 @@ describe('overdrive surge', () => {
     expect(g.shockCooldown).toBe(300); // frozen while surging
     for (let t = 0; t < 300; t += 1) g.update();
     expect(g.shockCooldown).toBeLessThan(300); // drains after expiry
+  });
+});
+
+describe('shared-arena aggro', () => {
+  it('enemies chase the nearest pilot, teammate ghosts included', () => {
+    const { g } = makeGame();
+    g.obstacles = [];
+    const px = g.player.x;
+    const py = g.player.y;
+    g.enemies.push(minEnemy(px + 200, py, 5));
+    const e = g.enemies[0];
+    // No ghosts: tracks you.
+    expect(g.nearestPilot(e.x, e.y)).toEqual({ x: px, y: py });
+    g.moveEnemy(e, 0);
+    expect(e.x).toBeLessThan(px + 200);
+    // Teammate ghost closer (above): tracks them instead.
+    g.setRivals([{ uid: 'mate', x: px + 200, y: py - 150, a: 0, name: 'Mate', ship: 'vanguard' }]);
+    const t = g.nearestPilot(e.x, e.y);
+    expect(t.x).toBe(px + 200);
+    expect(t.y).toBe(py - 150);
+    const y0 = e.y;
+    g.moveEnemy(e, 0);
+    expect(e.y).toBeLessThan(y0);
+    // Stale ghost (broadcast stopped): ignored again.
+    g.rivals[0].seenAt = Date.now() - 20000;
+    expect(g.nearestPilot(e.x, e.y)).toEqual({ x: px, y: py });
+  });
+});
+
+describe('shared wave clock', () => {
+  function racedPair() {
+    const mk = () => {
+      const hud = createHudState();
+      const g = new Game(hud, () => {});
+      g.start('vanguard', 777, 'debris', { race: true });
+      return g;
+    };
+    return [mk(), mk()];
+  }
+
+  it('race waves advance on shared ticks, never on kills', () => {
+    const [a, b] = racedPair();
+    expect(a.raceClock).toBe(true);
+    a.kills = 45; // head start must not matter
+    a.enemies.push(minEnemy(a.player.x + 50, a.player.y, 1));
+    a.killEnemy(0);
+    expect(a.wave).toBe(1);
+    a.player.iframes = 99999;
+    b.player.iframes = 99999;
+    for (let t = 0; t < 1600; t += 1) {
+      a.update();
+      b.update();
+    }
+    expect(a.wave).toBe(2);
+    expect(b.wave).toBe(2);
+  });
+
+  it('both pilots meet the same boss on the shared schedule', () => {
+    const [a, b] = racedPair();
+    b.kills = 199;
+    // Land inside wave 20 (ticks 28500–29999), not past it.
+    for (const g of [a, b]) {
+      g.player.iframes = 99999;
+      g.tick = 19 * 1500 - 2;
+    }
+    for (let t = 0; t < 5; t += 1) {
+      a.update();
+      b.update();
+    }
+    expect(a.wave).toBe(20);
+    expect(b.wave).toBe(20);
+    const bossA = a.enemies.find((e) => e.isBoss);
+    const bossB = b.enemies.find((e) => e.isBoss);
+    expect(bossA?.type.name).toBe('DREADNOUGHT');
+    expect(bossB?.type.name).toBe('DREADNOUGHT');
+  });
+
+  it('solo waves still advance on kills', () => {
+    const { g } = makeGame();
+    expect(g.raceClock).toBe(false);
+    g.enemies.push(minEnemy(g.player.x + 50, g.player.y, 1));
+    g.kills = 9;
+    g.killEnemy(0);
+    expect(g.wave).toBe(2);
+  });
+});
+
+describe('shared swarm', () => {
+  function racedArcade() {
+    const hud = createHudState();
+    const g = new Game(hud, () => {});
+    g.start('vanguard', 777, 'debris', { race: true, mode: 'arcade' });
+    expect(g.sharedSwarm()).toBe(true);
+    g.player.iframes = 99999;
+    return g;
+  }
+
+  function fullSnap(g) {
+    return JSON.stringify(
+      g.enemies.map((e) => [
+        e.eid,
+        e.type.name,
+        Math.round(e.x * 100) / 100,
+        Math.round(e.y * 100) / 100,
+        e.health,
+      ]),
+    );
+  }
+
+  it('both pilots see identical enemies at identical spots', () => {
+    const a = racedArcade();
+    const b = racedArcade();
+    for (let t = 0; t < 400; t += 1) {
+      a.update();
+      b.update();
+    }
+    expect(a.enemies.length).toBeGreaterThan(0);
+    expect(fullSnap(a)).toBe(fullSnap(b));
+    // Gate spawns carry deterministic ids.
+    expect(a.enemies.every((e) => typeof e.eid === 'string')).toBe(true);
+  });
+
+  it('stages kills only for the shared arcade swarm', () => {
+    const a = racedArcade();
+    const foe = Object.assign(minEnemy(a.player.x + 50, a.player.y, 1), {
+      eid: 's1',
+      spawnT: 0,
+      private: false,
+    });
+    a.enemies.push(foe);
+    a.killEnemy(0);
+    expect(a.drainKills()).toEqual(['s1']);
+    expect(a.drainKills()).toEqual([]);
+
+    // Solo never stages.
+    const s = makeGame().g;
+    s.enemies.push(Object.assign(minEnemy(100, 100, 1), { eid: 's1', spawnT: 0, private: false }));
+    s.killEnemy(0);
+    expect(s.drainKills()).toEqual([]);
+
+    // Versus duels stay parallel (sabotage intake is private).
+    const hud = createHudState();
+    const v = new Game(hud, () => {});
+    v.start('vanguard', 777, 'debris', { race: true, mode: 'versus' });
+    expect(v.sharedSwarm()).toBe(false);
+    v.spawnEnemy('CHARGER');
+    v.killEnemy(0);
+    expect(v.drainKills()).toEqual([]);
+  });
+
+  it('remote kills drop the local copy with no score', () => {
+    const a = racedArcade();
+    a.enemies.push(Object.assign(minEnemy(200, 200, 5), { eid: 's9', spawnT: 0, private: false }));
+    expect(a.applyRemoteKill('s9')).toBe(true);
+    expect(a.enemies.length).toBe(0);
+    expect(a.score).toBe(0);
+    expect(a.applyRemoteKill('missing')).toBe(false);
+  });
+
+  it('materializing warp-ins cannot be hit until solid', () => {
+    const a = racedArcade();
+    const foe = Object.assign(minEnemy(a.player.x + 40, a.player.y, 10), {
+      eid: 's9',
+      spawnT: 45,
+      private: false,
+    });
+    a.enemies.push(foe);
+    a.bullets.push({ x: foe.x, y: foe.y, vx: 0, vy: 0, radius: 4, damage: 5, color: '#fff', life: 60 });
+    a.updateEnemies();
+    expect(foe.health).toBe(10);
+    expect(a.bullets.length).toBe(1);
+    foe.spawnT = 0;
+    a.updateEnemies();
+    expect(foe.health).toBeLessThan(10);
+    expect(a.bullets.length).toBe(0);
+  });
+});
+
+describe('canvas theme', () => {
+  it('light palette covers every dark palette key', () => {
+    for (const key of Object.keys(palette)) {
+      expect(lightPalette[key], `missing light color for ${key}`).toBeTruthy();
+    }
+    expect(lightPalette.surface).not.toBe(palette.surface);
+  });
+
+  it('engine swaps its active palette with lightMode', () => {
+    const { g } = makeGame();
+    expect(g.lightMode).toBe(false);
+    expect(g.pal).toBe(palette);
+    g.lightMode = true;
+    g.update();
+    expect(g.pal).toBe(lightPalette);
+    g.lightMode = false;
+    g.update();
+    expect(g.pal).toBe(palette);
   });
 });
 

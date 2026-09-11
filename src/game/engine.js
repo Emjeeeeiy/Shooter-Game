@@ -18,6 +18,7 @@ import {
   combo as COMBO,
   pickups as PICKUPS,
   palette,
+  lightPalette,
   player as PLAYER,
   restoration as RESTORE,
   shock as SHOCK,
@@ -39,6 +40,21 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const GRID_CELL = 90;
 const cellKey = (x, y) => `${Math.floor(x / GRID_CELL)},${Math.floor(y / GRID_CELL)}`;
+
+// Shared warp gates: fixed battlefield portals so every room mate on the same
+// seed sees identical spawn positions — one map, same enemies, like the
+// background animation. Solo/versus keep player-relative ambush spawns.
+const GATE_M = 170;
+const SWARM_GATES = [
+  { x: GATE_M, y: GATE_M },
+  { x: WORLD_WIDTH / 2, y: GATE_M },
+  { x: WORLD_WIDTH - GATE_M, y: GATE_M },
+  { x: WORLD_WIDTH - GATE_M, y: WORLD_HEIGHT / 2 },
+  { x: WORLD_WIDTH - GATE_M, y: WORLD_HEIGHT - GATE_M },
+  { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT - GATE_M },
+  { x: GATE_M, y: WORLD_HEIGHT - GATE_M },
+  { x: GATE_M, y: WORLD_HEIGHT / 2 },
+];
 
 /**
  * The simulation. Owns all entity state as plain (non-reactive) objects so the
@@ -66,6 +82,15 @@ export class Game {
     this.seed = 1;
     this.rngState = 1;
     this.rngLocal = 1;
+    // Canvas theme for the whole game map (synced from settings each frame).
+    this.lightMode = false;
+    this.pal = palette;
+    // Race rooms: shared wave clock instead of kill-driven waves.
+    this.raceClock = false;
+    // Arcade race mode id ('arcade' | 'versus' | null) for shared-swarm rules.
+    this.raceMode = null;
+    this.eidLocal = 0;
+    this.killOut = [];
 
     this.reset();
   }
@@ -81,6 +106,7 @@ export class Game {
     this.wave = 1;
     this.kills = 0;
     this.energy = ENERGY.max;
+    this.pal = this.lightMode ? lightPalette : palette;
 
     this.player = {
       x: WORLD_WIDTH / 2,
@@ -110,6 +136,8 @@ export class Game {
     this.ghostRings = [];
     this.fx = null;
     this.fxSeq = 0;
+    this.eidLocal = 0;
+    this.killOut = [];
 
     this.activeBuff = null;
     this.buffTimer = 0;
@@ -153,11 +181,13 @@ export class Game {
     this.syncHud();
   }
 
-  start(characterId, seed, mapId) {
+  start(characterId, seed, mapId, opts) {
     if (characterId && CHARACTERS[characterId]) {
       this.characterId = characterId;
       this.character = CHARACTERS[characterId];
     }
+    this.raceClock = !!opts?.race;
+    this.raceMode = opts?.race ? (opts?.mode ?? 'arcade') : null;
     this.setMap(mapId ?? this.mapId);
     this.srand(seed ?? ((Date.now() % 2147483646) + 1));
     this.reset();
@@ -334,6 +364,7 @@ export class Game {
         ship,
         color: CHARACTERS[ship]?.color ?? '#e4e4e7',
         lastFx,
+        seenAt: Date.now(), // freshness stamp for shared aggro
       });
       // New skill/ultimate sighting on a known-or-new ghost: play it locally.
       const fx = r.fx;
@@ -368,7 +399,7 @@ export class Game {
           vy: Math.sin(a) * sp,
           life: 26,
           maxLife: 26,
-          color: palette.missile,
+          color: this.pal.missile,
           size: 2.5,
           decay: 0.97,
         });
@@ -532,6 +563,18 @@ export class Game {
     this.pointer.y = clamp(y, 0, this.camera.height);
   }
 
+  /**
+   * Twin-stick aim: point the nose along a direction vector from the ship.
+   * Near-zero vectors keep the previous aim (stick release shouldn't snap).
+   */
+  setAimVector(dx, dy) {
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0.001)) return;
+    const RANGE = 600;
+    this.pointer.x = clamp(this.player.x + (dx / len) * RANGE - this.camera.x, 0, this.camera.width);
+    this.pointer.y = clamp(this.player.y + (dy / len) * RANGE - this.camera.y, 0, this.camera.height);
+  }
+
   /** Dynamic viewport for responsive play. World units stay fixed. */
   setView(w, h) {
     this.camera.width = clamp(Math.round(w), 600, WORLD_WIDTH);
@@ -583,7 +626,7 @@ export class Game {
         vx: Math.cos(a) * BULLET.speed,
         vy: Math.sin(a) * BULLET.speed,
         radius: BULLET.radius,
-        color: buffed || this.frenzyTimer > 0 ? palette.skill : palette.bullet,
+        color: buffed || this.frenzyTimer > 0 ? this.pal.skill : this.pal.bullet,
         life: BULLET.life,
         damage: buffed ? baseDmg * 2 : baseDmg,
       });
@@ -622,12 +665,12 @@ export class Game {
       this.burst(
         this.player.x - Math.cos(angle) * i * 10,
         this.player.y - Math.sin(angle) * i * 10,
-        palette.playerDash,
+        this.pal.playerDash,
         3,
         2,
       );
     }
-    this.burst(this.player.x, this.player.y, palette.accent, 10, 4);
+    this.burst(this.player.x, this.player.y, this.pal.accent, 10, 4);
     this.emit('sfx', { name: 'dash' });
   }
 
@@ -672,7 +715,7 @@ export class Game {
       });
     }
 
-    this.burst(this.player.x, this.player.y, palette.missile, 15, 5);
+    this.burst(this.player.x, this.player.y, this.pal.missile, 15, 5);
     this.emit('sfx', { name: 'missile' });
     this.fx = { k: 'missiles', a: this.player.angle, s: ++this.fxSeq };
     this.movePlayer(
@@ -709,6 +752,7 @@ export class Game {
     let hits = 0;
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const e = this.enemies[i];
+      if (e.spawnT > 0) continue; // warp-ins are intangible
       const d = Math.hypot(e.x - this.player.x, e.y - this.player.y);
       if (d > maxRadius) continue;
       hits += 1;
@@ -737,8 +781,8 @@ export class Game {
   ultShock() {
     this.shockCooldown = this.ultCooldown();
     this.pushShockVisual();
-    const hits = this.nova(SHOCK.maxRadius, SHOCK.damage, SHOCK.knockback, palette.shock);
-    this.burst(this.player.x, this.player.y, palette.shock, 50, 15);
+    const hits = this.nova(SHOCK.maxRadius, SHOCK.damage, SHOCK.knockback, this.pal.shock);
+    this.burst(this.player.x, this.player.y, this.pal.shock, 50, 15);
     this.emit('shake', { magnitude: hits > 6 ? 'big' : 'medium' });
     this.emit('sfx', { name: 'shock' });
     if (hits >= 5) this.hitStop(3);
@@ -756,7 +800,7 @@ export class Game {
     const steps = 10;
     for (let s = 1; s <= steps; s += 1) {
       this.movePlayer((Math.cos(a0) * dist) / steps, (Math.sin(a0) * dist) / steps);
-      this.burst(this.player.x, this.player.y, palette.magnet, 2, 3);
+      this.burst(this.player.x, this.player.y, this.pal.magnet, 2, 3);
     }
     const x1 = this.player.x;
     const y1 = this.player.y;
@@ -773,7 +817,7 @@ export class Game {
       if (Math.hypot(e.x - px, e.y - py) > 90 + e.radius) continue;
       hits += 1;
       e.flash = 8;
-      this.burst(e.x, e.y, palette.magnet, 8, 7);
+      this.burst(e.x, e.y, this.pal.magnet, 8, 7);
       this.damageEnemy(i, 6);
     }
     this.player.iframes = Math.max(this.player.iframes, 30);
@@ -794,7 +838,7 @@ export class Game {
     this.player.dashTime = 40;
     this.player.dashAngle = Math.atan2(t.y - this.player.y, t.x - this.player.x);
     this.player.chargeDetonate = true;
-    this.burst(this.player.x, this.player.y, palette.missile, 30, 10);
+    this.burst(this.player.x, this.player.y, this.pal.missile, 30, 10);
     this.emit('notice', { text: 'Seismic Charge — aim for a wall', tone: 'danger' });
     this.emit('shake', { magnitude: 'medium' });
     this.emit('sfx', { name: 'dash' });
@@ -811,11 +855,11 @@ export class Game {
       hits += 1;
       e.slowTimer = 240;
       e.flash = 8;
-      this.burst(e.x, e.y, palette.flash, 6, 6);
-      this.burst(e.x, e.y, palette.magnet, 4, 4);
+      this.burst(e.x, e.y, this.pal.flash, 6, 6);
+      this.burst(e.x, e.y, this.pal.magnet, 4, 4);
       this.damageEnemy(i, 3);
     }
-    this.burst(this.player.x, this.player.y, palette.flash, 30, 12);
+    this.burst(this.player.x, this.player.y, this.pal.flash, 30, 12);
     this.emit('notice', { text: 'Stasis — time stops', tone: 'magnet' });
     this.emit('shake', { magnitude: 'medium' });
     this.emit('sfx', { name: 'stasis' });
@@ -829,9 +873,9 @@ export class Game {
     p.chargeDetonate = false;
     p.iframes = Math.max(p.iframes, 30);
     this.pushShockVisual();
-    const hits = this.nova(850, 12, 30, palette.missile, 12, 12);
-    this.burst(p.x, p.y, palette.missile, 80, 18);
-    this.burst(p.x, p.y, palette.flash, 30, 10);
+    const hits = this.nova(850, 12, 30, this.pal.missile, 12, 12);
+    this.burst(p.x, p.y, this.pal.missile, 80, 18);
+    this.burst(p.x, p.y, this.pal.flash, 30, 10);
     this.emit('shake', { magnitude: 'big' });
     this.emit('sfx', { name: 'shock' });
     this.hitStop(6);
@@ -851,7 +895,7 @@ export class Game {
       radius: 520,
       life: 26,
       growth: -18,
-      color: palette.magnet,
+      color: this.pal.magnet,
     });
     let hits = 0;
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
@@ -870,13 +914,13 @@ export class Game {
       }
       e.health -= 5;
       e.flash = 8;
-      this.burst(e.x, e.y, palette.magnet, 6, 6);
-      this.burst(e.x, e.y, palette.flash, 3, 4);
+      this.burst(e.x, e.y, this.pal.magnet, 6, 6);
+      this.burst(e.x, e.y, this.pal.flash, 3, 4);
       if (e.health <= 0) this.killEnemy(i, { viaShock: true });
     }
     this.vortexTimer = 150;
-    this.burst(this.player.x, this.player.y, palette.flash, 25, 12);
-    this.burst(this.player.x, this.player.y, palette.magnet, 30, 10);
+    this.burst(this.player.x, this.player.y, this.pal.flash, 25, 12);
+    this.burst(this.player.x, this.player.y, this.pal.magnet, 30, 10);
     this.emit('notice', { text: 'Vortex drags them in', tone: 'magnet' });
     this.emit('shake', { magnitude: 'medium' });
     this.emit('sfx', { name: 'vortex' });
@@ -892,11 +936,11 @@ export class Game {
       radius: 30,
       life: 26,
       shape: 'hex',
-      color: palette.repair,
+      color: this.pal.repair,
     });
     this.rampartTimer = 300;
-    this.burst(this.player.x, this.player.y, palette.repair, 40, 12);
-    this.burst(this.player.x, this.player.y, palette.flash, 20, 8);
+    this.burst(this.player.x, this.player.y, this.pal.repair, 40, 12);
+    this.burst(this.player.x, this.player.y, this.pal.flash, 20, 8);
     this.emit('notice', { text: 'Rampart — come and take it', tone: 'repair' });
     this.emit('shake', { magnitude: 'small' });
     this.emit('sfx', { name: 'rampart' });
@@ -914,13 +958,13 @@ export class Game {
         vx: Math.cos(a) * BULLET.speed,
         vy: Math.sin(a) * BULLET.speed,
         radius: BULLET.radius,
-        color: palette.skill,
+        color: this.pal.skill,
         life: BULLET.life,
         damage: 2,
       });
     }
     this.frenzyTimer = 300;
-    this.burst(this.player.x, this.player.y, palette.skill, 30, 10);
+    this.burst(this.player.x, this.player.y, this.pal.skill, 30, 10);
     this.emit('notice', { text: 'Barrage — guns hot', tone: 'skill' });
     this.emit('shake', { magnitude: 'small' });
     this.emit('sfx', { name: 'missile' });
@@ -932,7 +976,7 @@ export class Game {
     this.beamTimer = 300;
     this.beamLen = 0;
     this.beamWall = false;
-    this.burst(this.player.x, this.player.y, palette.danger, 40, 12);
+    this.burst(this.player.x, this.player.y, this.pal.danger, 40, 12);
     this.emit('notice', { text: 'Annihilator deployed — hold aim', tone: 'danger' });
     this.emit('shake', { magnitude: 'medium' });
     this.emit('sfx', { name: 'shock' });
@@ -945,7 +989,7 @@ export class Game {
     this.energy = ENERGY.max;
     this.applyBuff('SKILL');
     this.overdriveTimer = 300;
-    this.burst(this.player.x, this.player.y, palette.skill, 40, 12);
+    this.burst(this.player.x, this.player.y, this.pal.skill, 40, 12);
     this.emit('notice', { text: 'Overdrive — skills are free', tone: 'skill' });
     this.emit('shake', { magnitude: 'small' });
     this.emit('sfx', { name: 'buff' });
@@ -968,7 +1012,7 @@ export class Game {
         pk.y += Math.sin(pa) * pull;
       }
     }
-    this.burst(this.player.x, this.player.y, palette.repair, 50, 12);
+    this.burst(this.player.x, this.player.y, this.pal.repair, 50, 12);
     this.emit('notice', { text: 'Restoration aura kindled', tone: 'repair' });
     this.emit('shake', { magnitude: 'small' });
     this.emit('sfx', { name: 'buff' });
@@ -1012,16 +1056,50 @@ export class Game {
     return type;
   }
 
+  /** Arcade rooms fight one shared swarm: same gates, same IDs, kills shared. */
+  sharedSwarm() {
+    return this.raceClock && this.raceMode === 'arcade';
+  }
+
   spawnEnemy(forceType = null) {
-    if (this.enemies.length >= SPAWN.maxEnemies) return;
     // Sabotage intake (forced type) is player-driven: draw from the local
     // stream so it never shifts the shared spawn schedule. Scheduled waves
     // stay on the world stream, identical for every room mate on this seed.
     const R = forceType ? () => this.rlocal() : () => this.random();
-    const angle = R() * Math.PI * 2;
-    const dist = Math.max(this.camera.width, this.camera.height) / 2 + 100;
-    const x = clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD_WIDTH - 50);
-    const y = clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD_HEIGHT - 50);
+    const shared = this.sharedSwarm() && !forceType;
+    if (this.enemies.length >= SPAWN.maxEnemies) {
+      if (!forceType) {
+        // World-stream discipline: a capped-out scheduled spawn burns the
+        // same draws a real spawn would, so room mates stay bit-identical.
+        R();
+        this.pickType();
+        if (this.tier() >= 2) R();
+        R();
+        R();
+        R();
+      }
+      return;
+    }
+    let x;
+    let y;
+    let spawnT = 0;
+    let eid;
+    let priv = !!forceType;
+    if (shared) {
+      // Fixed warp gates: the same enemy materializes at the same spot on
+      // every teammate's screen, like the background animation.
+      const gate = SWARM_GATES[Math.floor(R() * SWARM_GATES.length) % SWARM_GATES.length];
+      x = clamp(gate.x + (R() - 0.5) * 120, 50, WORLD_WIDTH - 50);
+      y = clamp(gate.y + (R() - 0.5) * 120, 50, WORLD_HEIGHT - 50);
+      spawnT = 45; // materialize-in: visible but harmless until solid
+      eid = `s${this.tick}`;
+    } else {
+      const angle = R() * Math.PI * 2;
+      const dist = Math.max(this.camera.width, this.camera.height) / 2 + 100;
+      x = clamp(this.player.x + Math.cos(angle) * dist, 50, WORLD_WIDTH - 50);
+      y = clamp(this.player.y + Math.sin(angle) * dist, 50, WORLD_HEIGHT - 50);
+      eid = forceType ? `x${this.eidLocal++}` : `s${this.tick}`;
+    }
 
     const type = forceType ?? this.pickType();
     const tier = this.tier();
@@ -1034,6 +1112,9 @@ export class Game {
     }
 
     this.enemies.push({
+      eid,
+      spawnT,
+      private: priv,
       x,
       y,
       radius: type.radius ?? 15,
@@ -1060,11 +1141,23 @@ export class Game {
   }
 
   spawnBoss() {
-    const def = BOSSES[this.bossesSlain % BOSSES.length];
-    const x = clamp(this.player.x + 500, 100, WORLD_WIDTH - 100);
-    const y = clamp(this.player.y - 300, 100, WORLD_HEIGHT - 100);
-    const health = def.baseHealth + this.bossesSlain * def.healthPerBoss;
+    // Race rooms derive the boss order from the shared wave clock so both
+    // pilots meet the same boss at the same time, whatever they killed.
+    const cycle = this.raceClock ? Math.max(0, Math.floor(this.wave / SPAWN.bossWaveEvery) - 1) : this.bossesSlain;
+    const def = BOSSES[cycle % BOSSES.length];
+    // Arcade race: the boss warps in at the arena heart on every screen.
+    const shared = this.sharedSwarm();
+    const x = shared
+      ? clamp(WORLD_WIDTH / 2 + (this.random() - 0.5) * 100, 100, WORLD_WIDTH - 100)
+      : clamp(this.player.x + 500, 100, WORLD_WIDTH - 100);
+    const y = shared
+      ? clamp(WORLD_HEIGHT / 2 + (this.random() - 0.5) * 100, 100, WORLD_HEIGHT - 100)
+      : clamp(this.player.y - 300, 100, WORLD_HEIGHT - 100);
+    const health = def.baseHealth + (this.raceClock ? Math.max(0, Math.floor(this.wave / SPAWN.bossWaveEvery)) : this.bossesSlain) * def.healthPerBoss;
     this.enemies.push({
+      eid: `b${this.wave}`,
+      spawnT: shared ? 60 : 0,
+      private: false,
       x,
       y,
       radius: def.radius,
@@ -1111,9 +1204,13 @@ export class Game {
 
     // Splitter spawns two normals.
     if (e.behavior === 'splitter' && !e.isBoss) {
+      const brood = e.eid ?? `x${this.eidLocal++}`;
       for (let k = 0; k < 2; k += 1) {
         if (this.enemies.length >= SPAWN.maxEnemies) break;
         this.enemies.push({
+          eid: `${brood}d${k}`,
+          spawnT: 0,
+          private: false,
           x: clamp(e.x + (this.rlocal() - 0.5) * 40, 30, WORLD_WIDTH - 30),
           y: clamp(e.y + (this.rlocal() - 0.5) * 40, 30, WORLD_HEIGHT - 30),
           radius: 14,
@@ -1139,9 +1236,13 @@ export class Game {
 
     // Hydra Matriarch bursts into chargers.
     if (e.behavior === 'hydra' && e.isBoss) {
+      const brood = e.eid ?? `x${this.eidLocal++}`;
       for (let k = 0; k < 3; k += 1) {
         if (this.enemies.length >= SPAWN.maxEnemies) break;
         this.enemies.push({
+          eid: `${brood}d${k}`,
+          spawnT: 0,
+          private: false,
           x: clamp(e.x + (this.rlocal() - 0.5) * 90, 30, WORLD_WIDTH - 30),
           y: clamp(e.y + (this.rlocal() - 0.5) * 90, 30, WORLD_HEIGHT - 30),
           radius: 16,
@@ -1187,6 +1288,7 @@ export class Game {
     this.score +=
       e.type.score * e.maxHealth * this.multiplier * (e.scoreMult ?? 1) * (this.character?.scoreMult ?? 1);
     this.kills += 1;
+    this.stageKill(e); // shared swarm: teammate removes their copy too
     const energyBounty = this.character?.energyOnKill ?? 0;
     if (energyBounty > 0) this.energy = Math.min(ENERGY.max, this.energy + energyBounty);
     this.emit('sfx', { name: e.isBoss ? 'bossdie' : 'explosion' });
@@ -1198,22 +1300,69 @@ export class Game {
       this.emit('banner', { text: 'Boss down', tone: 'success' });
     }
 
-    if (this.kills % SPAWN.killsPerWave === 0) {
+    if (!this.raceClock && this.kills % SPAWN.killsPerWave === 0) {
       this.wave += 1;
-      this.spawnInterval = this.spawnIntervalFor(this.wave);
-      if (this.wave % SPAWN.bossWaveEvery === 0) {
-        this.spawnBoss();
-      } else if (this.wave % 10 === 1) {
-        // New threat tier every 10 waves: breather + warning.
-        this.player.health = Math.min(this.player.maxHealth, this.player.health + 25);
-        this.emit('banner', { text: `Threat ${this.tier() + 1}`, tone: 'danger' });
-        this.emit('notice', { text: '+25 integrity — hold the line', tone: 'repair' });
-        this.emit('sfx', { name: 'wave' });
-      } else {
-        this.emit('banner', { text: `Wave ${this.wave}`, tone: 'accent' });
-        this.emit('sfx', { name: 'wave' });
-      }
+      this.onWaveChanged();
     }
+  }
+
+  /** Shared wave-change effects (banners, tiers, bosses). */
+  onWaveChanged() {
+    this.spawnInterval = this.spawnIntervalFor(this.wave);
+    if (this.wave % SPAWN.bossWaveEvery === 0) {
+      this.spawnBoss();
+    } else if (this.wave % 10 === 1) {
+      // New threat tier every 10 waves: breather + warning.
+      this.player.health = Math.min(this.player.maxHealth, this.player.health + 25);
+      this.emit('banner', { text: `Threat ${this.tier() + 1}`, tone: 'danger' });
+      this.emit('notice', { text: '+25 integrity — hold the line', tone: 'repair' });
+      this.emit('sfx', { name: 'wave' });
+    } else {
+      this.emit('banner', { text: `Wave ${this.wave}`, tone: 'accent' });
+      this.emit('sfx', { name: 'wave' });
+    }
+  }
+
+  /**
+   * Race rooms run a shared wave clock instead of kill-driven waves, so every
+   * pilot faces the same wave, tier and boss at the same tick — one map,
+   * same targets. Scores stay kill-driven per pilot.
+   */
+  updateRaceClock() {
+    if (!this.raceClock || !this.running) return;
+    const w = 1 + Math.floor(this.tick / SPAWN.waveTicks);
+    if (w === this.wave) return;
+    this.wave = w;
+    this.onWaveChanged();
+  }
+
+  /**
+   * Stage a removal for the shared swarm. Scores/drops/combo stay local to
+   * the killer — the broadcast only tells room mates to drop their copy.
+   */
+  stageKill(e) {
+    if (!e || !this.sharedSwarm() || e.private || !e.eid) return;
+    this.killOut.push(e.eid);
+  }
+
+  /** Drain staged kill ids for broadcast (clears the outbox). */
+  drainKills() {
+    if (!this.killOut.length) return [];
+    const out = this.killOut;
+    this.killOut = [];
+    return out;
+  }
+
+  /** Apply a teammate's kill: drop our copy silently, no score, no drops. */
+  applyRemoteKill(eid) {
+    if (!eid) return false;
+    const i = this.enemies.findIndex((e) => e.eid === eid);
+    if (i < 0) return false;
+    const e = this.enemies[i];
+    this.burst(e.x, e.y, this.pal.danger, 12, 6);
+    this.enemies.splice(i, 1);
+    if (e.isBoss) this.bossActive = this.enemies.some((x) => x.isBoss);
+    return true;
   }
 
   damagePlayer(amount, fromX = null, fromY = null) {
@@ -1232,7 +1381,7 @@ export class Game {
       const ka = Math.atan2(p.y - fromY, p.x - fromX);
       this.movePlayer(Math.cos(ka) * PLAYER.knockback, Math.sin(ka) * PLAYER.knockback);
     }
-    this.burst(p.x, p.y, palette.danger, 15, 8);
+    this.burst(p.x, p.y, this.pal.danger, 15, 8);
     this.emit('shake', { magnitude: 'small' });
     this.emit('sfx', { name: 'hurt' });
     if (p.health <= 0) {
@@ -1292,7 +1441,7 @@ export class Game {
     } else if (pk.kind === 'magnet') {
       this.applyBuff('MAGNET');
     }
-    this.burst(pk.x, pk.y, palette[pk.kind] ?? palette.accent, 12, 5);
+    this.burst(pk.x, pk.y, this.pal[pk.kind] ?? this.pal.accent, 12, 5);
     this.emit('sfx', { name: 'pickup' });
     this.pickups.splice(index, 1);
   }
@@ -1343,6 +1492,8 @@ export class Game {
 
   update() {
     if (!this.running || this.paused) return;
+    // Follow live theme toggles mid-run.
+    this.pal = this.lightMode ? lightPalette : palette;
     if (this.hitStopTicks > 0) {
       this.hitStopTicks -= 1;
       return;
@@ -1364,7 +1515,7 @@ export class Game {
         this.burst(
           this.player.x + Math.cos(a) * 20,
           this.player.y + Math.sin(a) * 20,
-          this.tick % 8 === 0 ? palette.flash : palette.skill,
+          this.tick % 8 === 0 ? this.pal.flash : this.pal.skill,
           1,
           3,
         );
@@ -1375,6 +1526,7 @@ export class Game {
     this.updateFiring();
     this.updatePlayer();
     if (!this.running) return; // player may have died
+    this.updateRaceClock();
     this.updateRivals();
     this.updateGhostRings();
     this.updateAura();
@@ -1451,7 +1603,7 @@ export class Game {
       this.burst(
         this.player.x + Math.cos(a) * 26,
         this.player.y + Math.sin(a) * 26,
-        palette.skill,
+        this.pal.skill,
         1,
         2,
       );
@@ -1474,13 +1626,14 @@ export class Game {
       if (p.chargeDetonate && Math.hypot(p.x - bx, p.y - by) < dashSpeed * 0.5) {
         this.detonate();
       } else {
-        if (p.dashTime % 2 === 0) this.burst(p.x, p.y, palette.playerDash, 2, 1);
+        if (p.dashTime % 2 === 0) this.burst(p.x, p.y, this.pal.playerDash, 2, 1);
 
         // Dashing is invincible and kills on contact, with a generous hitbox.
         // Warden hulls mend on every dash kill.
         const dashHeal = this.character.dash?.healOnKill ?? 0;
         for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
           const e = this.enemies[i];
+          if (e.spawnT > 0) continue; // warp-ins are intangible
           if (e.isBoss) {
             // Dash chips bosses instead of insta-killing (heavier hulls chip harder).
             if (Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius + DASH.killPadding) {
@@ -1503,7 +1656,7 @@ export class Game {
         if (p.dashTime <= 0) {
           p.isDashing = false;
           p.chargeDetonate = false;
-          this.burst(p.x, p.y, palette.accent, 8, 3);
+          this.burst(p.x, p.y, this.pal.accent, 8, 3);
         }
       }
     } else if (this.beamTimer > 0) {
@@ -1538,7 +1691,7 @@ export class Game {
         if (Math.hypot(e.x - this.player.x, e.y - this.player.y) > RESTORE.radius) continue;
         e.health -= RESTORE.burnPerTick;
         e.flash = Math.max(e.flash, 3);
-        if ((this.tick + i) % 12 === 0) this.burst(e.x, e.y, palette.repair, 1, 2);
+        if ((this.tick + i) % 12 === 0) this.burst(e.x, e.y, this.pal.repair, 1, 2);
         if (e.health <= 0) this.killEnemy(i, { viaShock: true });
       }
     }
@@ -1561,7 +1714,7 @@ export class Game {
         );
         e.health -= 0.05;
         e.flash = Math.max(e.flash, 2);
-        if ((this.tick + i) % 15 === 0) this.burst(e.x, e.y, palette.magnet, 1, 2);
+        if ((this.tick + i) % 15 === 0) this.burst(e.x, e.y, this.pal.magnet, 1, 2);
         if (e.health <= 0) this.killEnemy(i, { viaShock: true });
       }
     }
@@ -1603,6 +1756,7 @@ export class Game {
     const HALF = 70;
     for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
       const e = this.enemies[i];
+      if (e.spawnT > 0) continue; // warp-ins are intangible
       const dx = e.x - this.player.x;
       const dy = e.y - this.player.y;
       const along = dx * ca + dy * sa;
@@ -1610,7 +1764,7 @@ export class Game {
       if (Math.abs(-dx * sa + dy * ca) > HALF + e.radius) continue;
       e.health -= 0.5;
       e.flash = Math.max(e.flash, 2);
-      if ((this.tick + i) % 10 === 0) this.burst(e.x, e.y, palette.danger, 1, 3);
+      if ((this.tick + i) % 10 === 0) this.burst(e.x, e.y, this.pal.danger, 1, 3);
       if (e.health <= 0) this.killEnemy(i, { viaShock: true });
     }
     if (this.tick % 3 === 0 && LEN > 60) {
@@ -1618,7 +1772,7 @@ export class Game {
       this.burst(
         this.player.x + ca * d,
         this.player.y + sa * d,
-        this.tick % 6 === 0 ? palette.flash : palette.danger,
+        this.tick % 6 === 0 ? this.pal.flash : this.pal.danger,
         1,
         2,
       );
@@ -1628,7 +1782,7 @@ export class Game {
       this.burst(
         this.player.x + ca * LEN,
         this.player.y + sa * LEN,
-        palette.missile,
+        this.pal.missile,
         2,
         3,
       );
@@ -1676,11 +1830,12 @@ export class Game {
       m.x += m.vx;
       m.y += m.vy;
 
-      if (m.life % 3 === 0) this.burst(m.x, m.y, palette.missile, 1, 1);
+      if (m.life % 3 === 0) this.burst(m.x, m.y, this.pal.missile, 1, 1);
 
       let hit = false;
       for (let j = this.enemies.length - 1; j >= 0; j -= 1) {
         const e = this.enemies[j];
+        if (e.spawnT > 0) continue; // warp-ins are intangible
         if (Math.hypot(m.x - e.x, m.y - e.y) >= e.radius + m.radius) continue;
 
         this.damageEnemy(j, m.dmg ?? MISSILE.damage);
@@ -1691,13 +1846,13 @@ export class Game {
             this.player.health = Math.min(this.player.maxHealth, this.player.health + siphon);
           }
         }
-        this.burst(m.x, m.y, palette.missile, 10, 6);
+        this.burst(m.x, m.y, this.pal.missile, 10, 6);
         hit = true;
         break;
       }
 
       if (hit || m.life <= 0 || this.hitsObstacle(m.x, m.y, m.radius)) {
-        if (!hit) this.burst(m.x, m.y, palette.missile, 8, 4);
+        if (!hit) this.burst(m.x, m.y, this.pal.missile, 8, 4);
         this.missiles.splice(i, 1);
       }
     }
@@ -1731,7 +1886,7 @@ export class Game {
       const candidates = this.nearbyEnemies(grid, b.x, b.y);
       for (const i of candidates) {
         const e = this.enemies[i];
-        if (!e) continue;
+        if (!e || e.spawnT > 0) continue; // warp-ins are intangible
         if (Math.hypot(b.x - e.x, b.y - e.y) >= e.radius + b.radius) continue;
         this.shotsHit += 1;
         this.bullets.splice(j, 1);
@@ -1746,6 +1901,7 @@ export class Game {
       if (!e) continue;
       e.pulse += 0.1;
       if (e.flash > 0) e.flash -= 1;
+      if (e.spawnT > 0) e.spawnT -= 1; // warping in: frozen, harmless, intangible
       const slowed = (e.slowTimer ?? 0) > 0;
       if (slowed) {
         e.slowTimer -= 1;
@@ -1753,22 +1909,26 @@ export class Game {
       }
 
       // Rampart thorns (Bulwark ultimate): attackers die and mend the hull.
-      const touching = Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius;
+      const touching = !(e.spawnT > 0) && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius;
       if (touching && this.rampartTimer > 0 && !p.isDashing) {
         if (e.isBoss) this.damageEnemy(i, 10);
         else this.killEnemy(i);
         p.health = Math.min(p.maxHealth, p.health + 5);
-        this.burst(e.x, e.y, palette.repair, 12, 7);
+        this.burst(e.x, e.y, this.pal.repair, 12, 7);
         this.emit('sfx', { name: 'explosion' });
         continue;
       }
 
       // Contact damage (dash grants invincibility, iframes grant grace).
-      if (!p.isDashing && p.iframes <= 0 && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius) {
+      // Materializing warp-ins are harmless until solid.
+      if (!p.isDashing && p.iframes <= 0 && !(e.spawnT > 0) && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.radius) {
         const dmg = e.isBoss ? (e.boss?.contact ?? 25) : PLAYER.damageOnHit;
         // Contact consumes the enemy (except bosses) and damages the player.
-        if (!e.isBoss) this.enemies.splice(i, 1);
-        this.burst(e.x, e.y, palette.danger, 15, 8);
+        if (!e.isBoss) {
+          this.stageKill(e);
+          this.enemies.splice(i, 1);
+        }
+        this.burst(e.x, e.y, this.pal.danger, 15, 8);
         this.damagePlayer(dmg, e.x, e.y);
         if (!this.running) return;
         continue;
@@ -1779,9 +1939,34 @@ export class Game {
     }
   }
 
+  /**
+   * Shared-arena aggro: each client simulates its own battle copy, so enemies
+   * chase the nearest pilot they can see — you, or a live teammate ghost.
+   * Ghosts are visual only (they take no damage here); stale ones — a pilot
+   * whose broadcast stopped — never attract.
+   */
+  nearestPilot(x, y) {
+    const p = this.player;
+    let tx = p.x;
+    let ty = p.y;
+    let best = Math.hypot(p.x - x, p.y - y);
+    const now = Date.now();
+    for (const g of this.rivals ?? []) {
+      if (now - (g.seenAt ?? 0) > 15000) continue;
+      const d = Math.hypot(g.x - x, g.y - y);
+      if (d < best) {
+        best = d;
+        tx = g.x;
+        ty = g.y;
+      }
+    }
+    return { x: tx, y: ty };
+  }
+
   moveEnemy(e, index) {
     const p = this.player;
-    const angleToPlayer = Math.atan2(p.y - e.y, p.x - e.x);
+    const target = this.nearestPilot(e.x, e.y);
+    const angleToPlayer = Math.atan2(target.y - e.y, target.x - e.x);
 
     if (e.behavior === 'charger') {
       e.stateTimer -= 1;
@@ -1837,7 +2022,7 @@ export class Game {
           if (this.enemies.length >= SPAWN.maxEnemies) break;
           this.spawnEnemy(mType);
         }
-        this.burst(e.x, e.y, palette.boss, 20, 8);
+        this.burst(e.x, e.y, this.pal.boss, 20, 8);
         this.emit('shake', { magnitude: 'small' });
         this.emit('sfx', { name: 'bossspawn' });
       }
@@ -1898,10 +2083,15 @@ export class Game {
         e.stateTimer = e.boss?.minionInterval ?? 240;
         const mCount = e.boss?.minionsPerSpawn ?? 6;
         const mType = ENEMY_TYPES[e.boss?.minion] ?? ENEMY_TYPES.NORMAL;
+        const brood = e.eid ?? `x${this.eidLocal++}`;
         for (let k = 0; k < mCount; k += 1) {
           if (this.enemies.length >= SPAWN.maxEnemies) break;
-          const ma = (k / mCount) * Math.PI * 2 + this.random();
+          // Local stream: brood timing follows kill-driven boss lifetimes.
+          const ma = (k / mCount) * Math.PI * 2 + this.rlocal();
           this.enemies.push({
+            eid: `${brood}m${k}`,
+            spawnT: 0,
+            private: false,
             x: clamp(e.x + Math.cos(ma) * 70, 30, WORLD_WIDTH - 30),
             y: clamp(e.y + Math.sin(ma) * 70, 30, WORLD_HEIGHT - 30),
             radius: 14,
@@ -1915,7 +2105,7 @@ export class Game {
             buff: mType.buff ?? null,
             drop: null,
             behavior: mType.behavior ?? 'chase',
-            seed: this.random() * 1000,
+            seed: this.rlocal() * 1000,
             state: 'chase',
             stateTimer: 0,
             lockAngle: 0,

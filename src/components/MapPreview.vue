@@ -1,7 +1,8 @@
 <script setup>
-import { onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { Game, createHudState } from '../game/engine.js';
-import { WORLD_HEIGHT, WORLD_WIDTH, palette } from '../game/constants.js';
+import { WORLD_HEIGHT, WORLD_WIDTH } from '../game/constants.js';
+import { canvasPalette, setCanvasTheme } from '../game/renderer.js';
 
 // True mini preview: runs the real obstacle generator with a fixed seed and
 // draws the resulting layout to scale, plus the spawn point.
@@ -11,11 +12,14 @@ const props = defineProps({
 });
 
 const canvasRef = ref(null);
+let observer = null;
 
-onMounted(() => {
-  if (props.mapId === 'random') return;
+function draw() {
   const canvas = canvasRef.value;
-  if (!canvas) return;
+  if (!canvas || props.mapId === 'random') return;
+  // Thumbnails follow the UI theme like the live map does.
+  setCanvasTheme(document.documentElement.classList.contains('light'));
+  const P = canvasPalette();
   const game = new Game(createHudState(), () => {});
   game.srand(props.seed);
   game.setMap(props.mapId);
@@ -28,10 +32,10 @@ onMounted(() => {
   const ox = (W - WORLD_WIDTH * s) / 2;
   const oy = (H - WORLD_HEIGHT * s) / 2;
 
-  ctx.fillStyle = palette.surface;
+  ctx.fillStyle = P.surface;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = palette.obstacle;
-  ctx.strokeStyle = palette.obstacleEdge;
+  ctx.fillStyle = P.obstacle;
+  ctx.strokeStyle = P.obstacleEdge;
   ctx.lineWidth = 1;
   for (const o of game.obstacles) {
     const x = ox + o.x * s;
@@ -41,10 +45,21 @@ onMounted(() => {
     ctx.fillRect(x, y, w, h);
     ctx.strokeRect(x + 0.5, y + 0.5, Math.max(1, w - 1), Math.max(1, h - 1));
   }
-  ctx.fillStyle = palette.accent;
+  ctx.fillStyle = P.accent;
   ctx.beginPath();
   ctx.arc(ox + (WORLD_WIDTH / 2) * s, oy + (WORLD_HEIGHT / 2) * s, 3, 0, Math.PI * 2);
   ctx.fill();
+}
+
+onMounted(() => {
+  draw();
+  // Repaint if the theme flips while thumbnails are visible.
+  observer = new MutationObserver(() => draw());
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+});
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect();
 });
 </script>
 

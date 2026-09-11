@@ -1,6 +1,21 @@
-import { MINIMAP_SIZE, WORLD_HEIGHT, WORLD_WIDTH, palette, restoration as RESTORE } from './constants.js';
+import { MINIMAP_SIZE, WORLD_HEIGHT, WORLD_WIDTH, lightPalette, palette, restoration as RESTORE } from './constants.js';
 
 const GRID = 100;
+
+// Active canvas palette: dark game world by default, light variant when the
+// UI theme is light (game.lightMode). draw()/drawMinimap() sync it per call;
+// menu previews (ShipPreview, BattleBackground) set it explicitly.
+let PAL = palette;
+
+/** Select the canvas palette directly (menu previews outside draw()). */
+export function setCanvasTheme(light) {
+  PAL = light ? lightPalette : palette;
+}
+
+/** Active canvas palette (follows the last setCanvasTheme/draw call). */
+export function canvasPalette() {
+  return PAL;
+}
 
 const onScreen = (x, y, margin, camera) =>
   x > -margin && x < camera.width + margin && y > -margin && y < camera.height + margin;
@@ -11,10 +26,11 @@ const onScreen = (x, y, margin, camera) =>
  * bullets use a tracer stroke instead so 100+ bullets stay at 60fps.
  */
 export function draw(ctx, game) {
+  setCanvasTheme(!!game.lightMode);
   const { camera } = game;
 
   ctx.clearRect(0, 0, camera.width, camera.height);
-  ctx.fillStyle = palette.surface;
+  ctx.fillStyle = PAL.surface;
   ctx.fillRect(0, 0, camera.width, camera.height);
 
   drawGrid(ctx, camera);
@@ -49,7 +65,7 @@ function drawFrostFlash(ctx, game) {
 }
 
 function drawGrid(ctx, camera) {
-  ctx.strokeStyle = palette.grid;
+  ctx.strokeStyle = PAL.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
 
@@ -65,14 +81,14 @@ function drawGrid(ctx, camera) {
 }
 
 function drawBounds(ctx, camera) {
-  ctx.strokeStyle = palette.bounds;
+  ctx.strokeStyle = PAL.bounds;
   ctx.lineWidth = 2;
   ctx.strokeRect(-camera.x, -camera.y, WORLD_WIDTH, WORLD_HEIGHT);
 }
 
 function drawObstacles(ctx, { obstacles, camera }) {
-  ctx.fillStyle = palette.obstacle;
-  ctx.strokeStyle = palette.obstacleEdge;
+  ctx.fillStyle = PAL.obstacle;
+  ctx.strokeStyle = PAL.obstacleEdge;
   ctx.lineWidth = 1;
 
   for (const o of obstacles) {
@@ -91,7 +107,7 @@ function drawPickups(ctx, { pickups, camera }) {
     const y = pk.y - camera.y;
     if (!onScreen(x, y, 30, camera)) continue;
     const color =
-      pk.kind === 'repair' ? palette.repair : pk.kind === 'energy' ? palette.accent : palette.magnet;
+      pk.kind === 'repair' ? PAL.repair : pk.kind === 'energy' ? PAL.accent : PAL.magnet;
     const blink = pk.life < 120 ? (Math.floor(pk.life / 8) % 2 === 0 ? 0.35 : 1) : 1;
     const r = 9 + Math.sin(pk.pulse) * 1.5;
 
@@ -144,7 +160,7 @@ function drawParticles(ctx, { particles, camera }) {
 
 function drawTrail(ctx, game) {
   const { player, camera } = game;
-  const color = game.character?.color ?? palette.player;
+  const color = game.character?.color ?? PAL.player;
   for (const t of player.trail) {
     const x = t.x - camera.x;
     const y = t.y - camera.y;
@@ -163,7 +179,7 @@ function drawShockWaves(ctx, { shockWaves, camera }) {
   for (const s of shockWaves) {
     const x = s.x - camera.x;
     const y = s.y - camera.y;
-    const color = s.color ?? palette.shock;
+    const color = s.color ?? PAL.shock;
     const hex = s.shape === 'hex';
     const path = (r) => {
       if (hex) tracePath(ctx, 'hexagon', x, y, r);
@@ -210,8 +226,8 @@ function drawBullets(ctx, { bullets, camera }) {
 }
 
 function drawMissiles(ctx, { missiles, camera }) {
-  ctx.fillStyle = palette.missile;
-  ctx.shadowColor = palette.missile;
+  ctx.fillStyle = PAL.missile;
+  ctx.shadowColor = PAL.missile;
   ctx.shadowBlur = 10;
 
   for (const m of missiles) {
@@ -242,14 +258,15 @@ function drawEnemies(ctx, { enemies, camera }) {
     const telegraph = e.behavior === 'charger' && e.state === 'telegraph';
     const r = e.radius + Math.sin(e.pulse) * 1.5 + (telegraph ? 2.5 : 0);
 
-    const body = e.flash > 0 ? palette.flash : e.color;
+    const body = e.flash > 0 ? PAL.flash : e.color;
     ctx.fillStyle = body;
-    ctx.globalAlpha = 0.9;
+    // Materializing warp-ins render ghostly until solid.
+    ctx.globalAlpha = e.spawnT > 0 ? 0.4 : 0.9;
     tracePath(ctx, e.shape, x, y, r, e);
     ctx.fill();
 
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = telegraph ? palette.flash : e.color;
+    ctx.globalAlpha = e.spawnT > 0 ? 0.55 : 1;
+    ctx.strokeStyle = telegraph ? PAL.flash : e.color;
     ctx.lineWidth = e.isBoss ? 2.5 : 1.5;
     tracePath(ctx, e.shape, x, y, r + 3, e);
     ctx.stroke();
@@ -258,13 +275,13 @@ function drawEnemies(ctx, { enemies, camera }) {
       // Boss HP bar + telegraph ring
       const w = 110;
       const top = y - e.radius - 18;
-      ctx.fillStyle = 'rgba(255,255,255,0.14)';
-      ctx.fillRect(x - w / 2, top, w, 5);
+    ctx.fillStyle = 'rgba(127,127,127,0.4)';
+    ctx.fillRect(x - w / 2, top, w, 5);
       ctx.fillStyle = e.color;
       ctx.fillRect(x - w / 2, top, w * Math.max(0, e.health / e.maxHealth), 5);
     } else     if ((e.slowTimer ?? 0) > 0) {
       ctx.globalAlpha = 0.8;
-      ctx.strokeStyle = '#a5f3fc';
+      ctx.strokeStyle = PAL.shock;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(x, y, r + 6, 0, Math.PI * 2);
@@ -275,8 +292,8 @@ function drawEnemies(ctx, { enemies, camera }) {
     if (e.health < e.maxHealth) {
       const w = e.radius * 2;
       const top = y - e.radius - 10;
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.14)';
-      ctx.fillRect(x - w / 2, top, w, 2);
+    ctx.fillStyle = 'rgba(127,127,127,0.4)';
+    ctx.fillRect(x - w / 2, top, w, 2);
       ctx.fillStyle = e.color;
       ctx.fillRect(x - w / 2, top, w * (e.health / e.maxHealth), 2);
     }
@@ -376,16 +393,16 @@ function drawPlayer(ctx, game) {
   const y = player.y - camera.y;
   const shipId = game.characterId ?? 'vanguard';
 
-  const charColor = game.character?.color ?? palette.player;
+  const charColor = game.character?.color ?? PAL.player;
   const body =
     player.flash > 0
-      ? palette.flash
+      ? PAL.flash
       : player.isDashing
-        ? palette.playerDash
+        ? PAL.playerDash
         : activeBuff === 'SKILL'
-          ? palette.skill
+          ? PAL.skill
           : activeBuff === 'MAGNET'
-            ? palette.magnet
+            ? PAL.magnet
             : charColor;
 
   // I-frame blink
@@ -407,7 +424,7 @@ function drawPlayer(ctx, game) {
     ctx.translate(x, y);
     ctx.rotate(game.tick * 0.03);
     ctx.globalAlpha = 0.7;
-    ctx.strokeStyle = palette.repair;
+    ctx.strokeStyle = PAL.repair;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < 6; i += 1) {
@@ -439,7 +456,7 @@ function drawPlayer(ctx, game) {
   ctx.restore();
   if (game.pilotName) {
     ctx.globalAlpha = 0.8;
-    ctx.fillStyle = '#e4e4e7';
+    ctx.fillStyle = PAL.text;
     ctx.font = '11px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(game.pilotName, x, y - player.radius - 14);
@@ -464,12 +481,12 @@ function drawRivals(ctx, game) {
     ctx.translate(x, y);
     ctx.rotate(r.a || 0);
     ctx.globalAlpha = 0.7;
-    ctx.fillStyle = r.color || '#e4e4e7';
+    ctx.fillStyle = r.color || PAL.text;
     traceShip(ctx, r.ship || 'vanguard');
     ctx.fill();
     ctx.restore();
     ctx.globalAlpha = 0.75;
-    ctx.fillStyle = '#e4e4e7';
+    ctx.fillStyle = PAL.text;
     ctx.fillText(r.name || 'Pilot', x, y - 32);
   }
   ctx.restore();
@@ -487,7 +504,7 @@ function drawGhostRings(ctx, game) {
     const y = r.y - camera.y;
     if (!onScreen(x, y, r.r + 20, camera)) continue;
     ctx.globalAlpha = Math.max(0, (r.life / r.maxLife) * 0.8);
-    ctx.strokeStyle = r.color || palette.flash;
+    ctx.strokeStyle = r.color || PAL.flash;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(x, y, r.r, 0, Math.PI * 2);
@@ -604,12 +621,12 @@ export function traceShip(ctx, shipId) {
 
 // Per-ship cockpit / armor details in dark contrast plus body-color lights.
 export function drawShipDetails(ctx, shipId, body) {
-  ctx.fillStyle = palette.surface;
+  ctx.fillStyle = PAL.surface;
   if (shipId === 'spectre') {
     ctx.beginPath();
     ctx.ellipse(6, 0, 6, 2.2, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = palette.missile;
+    ctx.fillStyle = PAL.missile;
     ctx.beginPath();
     ctx.arc(-11, 3.5, 1.8, 0, Math.PI * 2);
     ctx.arc(-11, -3.5, 1.8, 0, Math.PI * 2);
@@ -618,13 +635,13 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.beginPath();
     ctx.arc(-3, 0, 5.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.strokeStyle = palette.surface;
+    ctx.strokeStyle = PAL.surface;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(-11, -13);
     ctx.lineTo(-11, 13);
     ctx.stroke();
-    ctx.fillStyle = palette.danger;
+    ctx.fillStyle = PAL.danger;
     ctx.beginPath();
     ctx.arc(8, 0, 2, 0, Math.PI * 2);
     ctx.fill();
@@ -632,13 +649,13 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.beginPath();
     ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = palette.repair;
+    ctx.fillStyle = PAL.repair;
     ctx.beginPath();
     ctx.arc(0, -12, 2, 0, Math.PI * 2);
     ctx.arc(0, 12, 2, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'phantom') {
-    ctx.fillStyle = palette.surface;
+    ctx.fillStyle = PAL.surface;
     ctx.beginPath();
     ctx.ellipse(3, 0, 7, 2.4, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -647,7 +664,7 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.arc(11, 0, 1.6, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'bulwark') {
-    ctx.fillStyle = palette.surface;
+    ctx.fillStyle = PAL.surface;
     ctx.beginPath();
     ctx.arc(-15, -9.5, 2, 0, Math.PI * 2);
     ctx.arc(-15, 9.5, 2, 0, Math.PI * 2);
@@ -657,7 +674,7 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.arc(19, 0, 1.8, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'hornet') {
-    ctx.strokeStyle = palette.surface;
+    ctx.strokeStyle = PAL.surface;
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(8, -4.5);
@@ -670,7 +687,7 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.arc(-20, 0, 1.5, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'corsair') {
-    ctx.fillStyle = palette.surface;
+    ctx.fillStyle = PAL.surface;
     ctx.beginPath();
     ctx.arc(8, 0, 3.5, 0, Math.PI * 2);
     ctx.fill();
@@ -680,7 +697,7 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.arc(-13, 10, 1.6, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'titan') {
-    ctx.fillStyle = palette.surface;
+    ctx.fillStyle = PAL.surface;
     ctx.beginPath();
     ctx.arc(0, 0, 4.5, 0, Math.PI * 2);
     ctx.fill();
@@ -691,7 +708,7 @@ export function drawShipDetails(ctx, shipId, body) {
     ctx.arc(-13, 8, 2, 0, Math.PI * 2);
     ctx.fill();
   } else if (shipId === 'oracle') {
-    ctx.fillStyle = palette.surface;
+    ctx.fillStyle = PAL.surface;
     ctx.beginPath();
     ctx.arc(0, 0, 7, 0, Math.PI * 2);
     ctx.fill();
@@ -716,13 +733,13 @@ function drawAura(ctx, game) {
   const r = RESTORE.radius * (1 + Math.sin(game.tick * 0.08) * 0.02);
 
   ctx.globalAlpha = 0.07;
-  ctx.fillStyle = palette.repair;
+  ctx.fillStyle = PAL.repair;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
 
   ctx.globalAlpha = 0.5;
-  ctx.strokeStyle = palette.repair;
+  ctx.strokeStyle = PAL.repair;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -753,7 +770,7 @@ function drawRampartAura(ctx, game) {
 
   ctx.save();
   ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = palette.repair;
+  ctx.strokeStyle = PAL.repair;
   ctx.lineWidth = 2;
   ctx.setLineDash([14, 10]);
   ctx.lineDashOffset = -game.tick * 0.8;
@@ -766,7 +783,7 @@ function drawRampartAura(ctx, game) {
   for (let k = 0; k < 4; k += 1) {
     const a = t + (k * Math.PI) / 2;
     ctx.globalAlpha = 0.9;
-    ctx.fillStyle = k % 2 === 0 ? palette.repair : palette.flash;
+    ctx.fillStyle = k % 2 === 0 ? PAL.repair : PAL.flash;
     ctx.beginPath();
     ctx.arc(x + Math.cos(a) * orbit, y + Math.sin(a) * orbit, 3.5, 0, Math.PI * 2);
     ctx.fill();
@@ -785,7 +802,7 @@ function drawFrenzyAura(ctx, game) {
 
   ctx.save();
   ctx.globalAlpha = 0.6;
-  ctx.strokeStyle = palette.skill;
+  ctx.strokeStyle = PAL.skill;
   ctx.lineWidth = 2;
   ctx.setLineDash([8, 7]);
   ctx.lineDashOffset = game.tick * 1.5;
@@ -822,7 +839,7 @@ function drawVortexArms(ctx, game) {
     const r = 90 + k * 55;
     const a0 = game.tick * (0.06 - k * 0.012) + (k * Math.PI * 2) / 3;
     ctx.globalAlpha = (0.55 - k * 0.12) * fade;
-    ctx.strokeStyle = k % 2 === 0 ? palette.magnet : palette.flash;
+    ctx.strokeStyle = k % 2 === 0 ? PAL.magnet : PAL.flash;
     ctx.lineWidth = 5 - k;
     ctx.beginPath();
     ctx.arc(x, y, r, a0, a0 + Math.PI * 0.8);
@@ -852,8 +869,8 @@ function drawBeam(ctx, game) {
 
   // Corona bloom.
   ctx.globalAlpha = 0.16;
-  ctx.strokeStyle = palette.danger;
-  ctx.shadowColor = palette.danger;
+  ctx.strokeStyle = PAL.danger;
+  ctx.shadowColor = PAL.danger;
   ctx.shadowBlur = 30;
   ctx.lineWidth = 34 * flick;
   ctx.beginPath();
@@ -864,7 +881,7 @@ function drawBeam(ctx, game) {
   // Hot sheath.
   ctx.globalAlpha = 0.5;
   ctx.shadowBlur = 18;
-  ctx.strokeStyle = palette.missile;
+  ctx.strokeStyle = PAL.missile;
   ctx.lineWidth = 13 * flick;
   ctx.beginPath();
   ctx.moveTo(x, y);
@@ -874,7 +891,7 @@ function drawBeam(ctx, game) {
   // Traveling energy packets.
   ctx.globalAlpha = 0.85;
   ctx.shadowBlur = 12;
-  ctx.strokeStyle = palette.flash;
+  ctx.strokeStyle = PAL.flash;
   ctx.lineWidth = 6;
   ctx.setLineDash([26, 60]);
   ctx.lineDashOffset = -game.tick * 9;
@@ -896,7 +913,7 @@ function drawBeam(ctx, game) {
   // Muzzle flare.
   const fl = 10 + Math.sin(game.tick * 1.1) * 3;
   ctx.globalAlpha = 0.9;
-  ctx.fillStyle = palette.flash;
+  ctx.fillStyle = PAL.flash;
   ctx.shadowBlur = 24;
   ctx.beginPath();
   ctx.arc(x, y, fl, 0, Math.PI * 2);
@@ -906,14 +923,14 @@ function drawBeam(ctx, game) {
   if (game.beamWall) {
     const iw = 12 + Math.sin(game.tick * 0.9) * 3;
     ctx.globalAlpha = 0.85;
-    ctx.fillStyle = palette.missile;
-    ctx.shadowColor = palette.missile;
+    ctx.fillStyle = PAL.missile;
+    ctx.shadowColor = PAL.missile;
     ctx.shadowBlur = 26;
     ctx.beginPath();
     ctx.arc(ex, ey, iw, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 0.9;
-    ctx.fillStyle = palette.flash;
+    ctx.fillStyle = PAL.flash;
     ctx.shadowBlur = 12;
     ctx.beginPath();
     ctx.arc(ex, ey, iw * 0.45, 0, Math.PI * 2);
@@ -933,7 +950,7 @@ function drawOverdriveAura(ctx, game) {
   const y = player.y - camera.y;
 
   ctx.save();
-  ctx.strokeStyle = palette.skill;
+  ctx.strokeStyle = PAL.skill;
   ctx.lineWidth = 2;
   ctx.setLineDash([18, 12]);
   ctx.globalAlpha = 0.65;
@@ -978,29 +995,30 @@ function drawLowHpVignette(ctx, game) {
 }
 
 export function drawMinimap(ctx, game) {
+  setCanvasTheme(!!game.lightMode);
   const { camera, obstacles, enemies, missiles, pickups, player } = game;
-  const charColor = game.character?.color ?? palette.player;
+  const charColor = game.character?.color ?? PAL.player;
   const sx = MINIMAP_SIZE / WORLD_WIDTH;
   const sy = MINIMAP_SIZE / WORLD_HEIGHT;
 
   ctx.clearRect(0, 0, MINIMAP_SIZE, MINIMAP_SIZE);
 
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.06)';
+  ctx.fillStyle = PAL.obstacleEdge;
   for (const o of obstacles) {
     ctx.fillRect(o.x * sx, o.y * sy, Math.max(1, o.width * sx), Math.max(1, o.height * sy));
   }
 
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.16)';
+  ctx.strokeStyle = PAL.bounds;
   ctx.lineWidth = 1;
   ctx.strokeRect(camera.x * sx, camera.y * sy, camera.width * sx, camera.height * sy);
 
-  ctx.fillStyle = palette.missile;
+  ctx.fillStyle = PAL.missile;
   for (const m of missiles) {
     ctx.fillRect(m.x * sx - 1, m.y * sy - 1, 2, 2);
   }
 
   for (const pk of pickups) {
-    ctx.fillStyle = pk.kind === 'repair' ? palette.repair : pk.kind === 'energy' ? palette.accent : palette.magnet;
+    ctx.fillStyle = pk.kind === 'repair' ? PAL.repair : pk.kind === 'energy' ? PAL.accent : PAL.magnet;
     ctx.fillRect(pk.x * sx - 1, pk.y * sy - 1, 2, 2);
   }
 
@@ -1017,7 +1035,7 @@ export function drawMinimap(ctx, game) {
     }
   }
 
-  ctx.fillStyle = player.isDashing ? palette.playerDash : charColor;
+  ctx.fillStyle = player.isDashing ? PAL.playerDash : charColor;
   ctx.beginPath();
   ctx.arc(player.x * sx, player.y * sy, 3, 0, Math.PI * 2);
   ctx.fill();

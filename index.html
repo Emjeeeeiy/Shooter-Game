@@ -1,11 +1,21 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Neon Strike — fast top-down arena shooter. Dash, missiles, shockwaves. Survive the waves." />
-    <meta name="theme-color" content="#09090b" />
+    <meta name="theme-color" content="#08080c" />
     <title>Neon Strike</title>
+    <script>
+      // Apply saved theme before first paint (avoids a dark flash in light mode).
+      try {
+        var s = JSON.parse(localStorage.getItem('neonStrike_settings_v1') || '{}');
+        if (s.theme === 'light') {
+          document.documentElement.classList.add('light');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef1f6');
+        }
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/png" href="./brand/logo.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

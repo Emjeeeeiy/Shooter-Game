@@ -1,4 +1,4 @@
-<script setup>
+  <script setup>
 import { computed, ref, watch } from 'vue';
 
 const props = defineProps({
@@ -105,7 +105,7 @@ function save() {
             class="font-ui flex-1 rounded-xl py-2.5 text-sm font-bold tracking-wider transition-all"
             :class="saved
               ? 'cursor-default bg-white/6 text-zinc-500'
-              : 'bg-accent text-surface hover:brightness-110 active:scale-95'"
+              : 'bg-accent text-ink hover:brightness-110 active:scale-95'"
           >
             {{ saved ? '✓ Saved' : 'Save Score' }}
           </button>

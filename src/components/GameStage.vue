@@ -6,7 +6,7 @@ import { useSettings } from '../composables/useSettings.js';
 import { energy as ENERGY } from '../game/constants.js';
 import { sfx } from '../game/audio.js';
 import { music } from '../game/music.js';
-import { bumpCounter, updateLiveScore, useRoom as useRaceRoom } from '../composables/useRoom.js';
+import { bumpCounter, setRoomPause, updateLiveScore, useRoom as useRaceRoom } from '../composables/useRoom.js';
 import AbilityBar from './AbilityBar.vue';
 import Banner from './Banner.vue';
 import GameOverOverlay from './GameOverOverlay.vue';
@@ -46,6 +46,8 @@ const {
   getSelf,
   setRivals,
   getFx,
+  drainKills,
+  applyRemoteKill,
   doInject,
   doGift,
   setMinimapEl,
@@ -79,20 +81,32 @@ let lastSentX = null;
 let lastSentY = null;
 let lastFxSent = -1;
 let fxTimer = null;
+let seenEids = new Set();
 
 function flushFx() {
   if (!props.race || !hud.running || hud.gameOver) return;
   const fx = getFx();
-  if (!fx || !Number.isInteger(fx.s) || fx.s === lastFxSent) return;
-  lastFxSent = fx.s;
+  const freshFx = fx && Number.isInteger(fx.s) && fx.s !== lastFxSent;
+  // Shared-swarm kills ride the same 1s tick so mates drop their copy fast.
+  const ko = drainKills();
+  if (!freshFx && !ko.length) return;
   const self = getSelf();
-  updateLiveScore(props.race.code, props.race.uid, {
+  const payload = {
     score: hud.score,
     wave: hud.wave,
     name: props.race.name,
     ...self,
-    fx: { k: fx.k, s: fx.s, a: fx.a },
-  }).catch(() => {});
+  };
+  if (freshFx) {
+    payload.fx = { k: fx.k, s: fx.s, a: fx.a };
+    lastFxSent = fx.s;
+  }
+  if (ko.length) {
+    payload.kills = {};
+    const now = Date.now();
+    for (const id of ko) payload.kills[id] = now;
+  }
+  updateLiveScore(props.race.code, props.race.uid, payload).catch(() => {});
 }
 
 watch(
@@ -106,6 +120,20 @@ watch(
       lastSentX = null;
       lastSentY = null;
       lastFxSent = -1;
+      seenEids = new Set();
+      // Adopt a room-wide pause hold on (re)start so late joiners freeze too.
+      // A stale hold of our own is released — a fresh run never starts frozen.
+      const rp = raceRoom.value?.pause;
+      if (props.race && rp?.by && rp.by !== props.race.uid) {
+        pausedBy.value = rp.name ?? 'A pilot';
+        if (!hud.paused) togglePause();
+      } else {
+        selfPause = false;
+        pausedBy.value = '';
+        if (props.race && rp?.by === props.race.uid) {
+          setRoomPause(props.race.code, null).catch(() => {});
+        }
+      }
       if (!fxTimer) fxTimer = setInterval(flushFx, 1000);
     } else if (fxTimer) {
       clearInterval(fxTimer);
@@ -173,6 +201,62 @@ const rivalIds = computed(() => {
   return Object.keys(raceRoom.value?.members ?? {}).filter((id) => id !== props.race.uid);
 });
 
+// --- global match pause: one shared arena, so pausing pauses everyone -----
+// Any pilot pausing writes the room hold; every client freezes. Any pilot
+// resuming clears it for all (democratic — no one can grief-lock the room).
+// NOTE: must live below the raceRoom declaration — watch getters evaluate
+// once at setup and would hit the temporal dead zone otherwise.
+const pausedBy = ref('');
+let selfPause = false;
+
+function onPauseButton() {
+  if (!props.race) {
+    togglePause();
+    return;
+  }
+  togglePause();
+  if (!hud.paused) {
+    // Resuming always releases globally (even someone else's hold).
+    selfPause = false;
+    pausedBy.value = '';
+    setRoomPause(props.race.code, null).catch(() => {});
+  }
+  // Pausing broadcasts via the hud.paused watcher below (covers P/Esc too).
+}
+
+watch(
+  () => hud.paused,
+  (paused) => {
+    if (!props.race || !hud.running || hud.gameOver) return;
+    if (paused && !selfPause && !pausedBy.value) {
+      selfPause = true;
+      setRoomPause(props.race.code, { by: props.race.uid, name: props.pilotName }).catch(() => {});
+    }
+    // Resume broadcasts happen in onPauseButton (covers remote holds too).
+  },
+);
+
+watch(
+  () => raceRoom.value?.pause,
+  (p) => {
+    if (!props.race || !hud.running || hud.gameOver) return;
+    const me = props.race.uid;
+    if (p?.by && p.by !== me) {
+      pausedBy.value = p.name ?? 'A pilot';
+      if (!hud.paused) togglePause();
+    } else if (!p) {
+      // Hold released (possibly by someone else) — unfreeze if we were held.
+      if (hud.paused && (selfPause || pausedBy.value)) {
+        selfPause = false;
+        pausedBy.value = '';
+        togglePause();
+      }
+    } else {
+      pausedBy.value = ''; // own echo
+    }
+  },
+);
+
 // --- same-arena rivals: room mates appear as ghost ships ---------------------
 // Both clients generate the identical seeded battlefield, so broadcast
 // positions land in the right places. Ghosts are visual only.
@@ -182,7 +266,21 @@ watch(
     if (!props.race) return;
     const ghosts = [];
     for (const [id, s] of Object.entries(live ?? {})) {
-      if (id === props.race.uid || s?.done) continue;
+      if (id === props.race.uid) continue;
+      // Shared-swarm kills: drop our copy of anything a mate finished.
+      if (s?.kills && typeof s.kills === 'object') {
+        for (const eid of Object.keys(s.kills)) {
+          if (!seenEids.has(eid)) {
+            seenEids.add(eid);
+            try {
+              applyRemoteKill(eid);
+            } catch {
+              // ignore — already gone or match over
+            }
+          }
+        }
+      }
+      if (s?.done) continue;
       if (!Number.isFinite(s?.x) || !Number.isFinite(s?.y)) continue;
       ghosts.push({ uid: id, x: s.x, y: s.y, a: s.a, name: s.name, ship: s.ship, fx: s.fx });
     }
@@ -251,6 +349,14 @@ function onLobby() {
 // Landscape-only on phones: prompt to rotate + auto-pause while portrait.
 const isPortraitPhone = ref(false);
 
+// Touch controls: any coarse-pointer device (phones AND tablets, any size).
+const isTouch = ref(false);
+let coarseQuery = null;
+
+function syncTouchCapable(e) {
+  isTouch.value = e?.matches ?? window.matchMedia?.('(pointer: coarse)').matches ?? false;
+}
+
 function checkOrientation() {
   const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
   isPortraitPhone.value =
@@ -284,9 +390,13 @@ const syncWait = ref(0);
 let syncTimer = null;
 let syncClock = null;
 
+function raceOpts() {
+  return { race: !!props.race, mode: props.race?.mode };
+}
+
 function beginRun() {
   setPilotName(props.pilotName);
-  start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId);
+  start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts());
   if (isPortraitPhone.value && hud.running && !hud.paused && !hud.gameOver) togglePause();
 }
 
@@ -296,6 +406,10 @@ onMounted(() => {
   window.addEventListener('resize', checkOrientation);
   window.addEventListener('orientationchange', checkOrientation);
   checkOrientation();
+  coarseQuery = window.matchMedia?.('(pointer: coarse)') ?? null;
+  syncTouchCapable(coarseQuery);
+  if (coarseQuery?.addEventListener) coarseQuery.addEventListener('change', syncTouchCapable);
+  else coarseQuery?.addListener?.(syncTouchCapable);
   const gunDelay = (props.race?.startsAt ?? 0) - Date.now();
   if (props.race && gunDelay > 0) {
     // Synced room start: hold on the gun-time so every client ticks from
@@ -318,7 +432,9 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
-  if (syncTimer) {
+  if (coarseQuery?.removeEventListener) coarseQuery.removeEventListener('change', syncTouchCapable);
+  else coarseQuery?.removeListener?.(syncTouchCapable);
+  coarseQuery = null;  if (syncTimer) {
     clearTimeout(syncTimer);
     syncTimer = null;
   }
@@ -363,7 +479,7 @@ const shakeClass = computed(() => {
         v-if="hud.running && !hud.gameOver"
         type="button"
         class="panel shrink-0 px-3 py-1.5 text-[12px] font-medium text-zinc-400 transition-colors hover:text-zinc-100"
-        @click="togglePause"
+        @click="onPauseButton"
       >
         {{ hud.paused ? 'Resume' : 'Pause' }} <kbd class="ml-1">P</kbd>
       </button>
@@ -424,7 +540,7 @@ const shakeClass = computed(() => {
       </div>
 
       <TouchControls
-        v-if="hud.running && !hud.paused && !hud.gameOver"
+        v-if="isTouch && hud.running && !hud.paused && !hud.gameOver"
         @move="(x, y) => setTouchMove(x, y)"
         @fire="(held) => setFire(held)"
         @dash="doDash"
@@ -437,8 +553,9 @@ const shakeClass = computed(() => {
         :score="hud.score"
         :wave="hud.wave"
         :music-on="settings.music"
-        @resume="togglePause"
-        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId)"
+        :paused-by="pausedBy"
+        @resume="onPauseButton"
+        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
         @quit="onLobby"
         @toggle-music="onToggleMusic"
       />
@@ -452,7 +569,7 @@ const shakeClass = computed(() => {
         :race="!!race"
         :pilot-name="pilotName"
         @save="onSave"
-        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId)"
+        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
         @lobby="onLobby"
         @standings="emit('room')"
       />
@@ -475,7 +592,7 @@ const shakeClass = computed(() => {
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
         <div class="text-lg font-semibold text-zinc-100">Rotate your device</div>
-        <p class="max-w-[260px] text-[13px] text-zinc-500">
+        <p class="max-w-65 text-[13px] text-zinc-500">
           Neon Strike plays in landscape. Turn your phone sideways — your run is paused.
         </p>
       </div>

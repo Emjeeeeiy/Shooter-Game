@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+  <div class="battle-bg pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
     <canvas ref="canvasRef" class="block h-full w-full opacity-70" />
     <!-- Readability gradient over the battle. -->
     <div

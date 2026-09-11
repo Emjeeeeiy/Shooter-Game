@@ -39,7 +39,8 @@ function onStickEnd(e) {
 </script>
 
 <template>
-  <div class="pointer-events-none absolute inset-0 z-20 md:hidden">
+  <!-- Shown whenever the parent detects a touch device (phones + tablets). -->
+  <div class="pointer-events-none absolute inset-0 z-20">
     <!-- Left virtual stick -->
     <div
       class="pointer-events-auto absolute bottom-16 left-4 h-28 w-28 rounded-full border border-white/15 bg-white/5 backdrop-blur-sm"
@@ -78,7 +79,7 @@ function onStickEnd(e) {
         DSH
       </button>
       <button
-        class="h-16 w-16 rounded-full bg-accent text-[12px] font-bold text-surface"
+        class="h-16 w-16 rounded-full bg-accent text-[12px] font-bold text-ink"
         @touchstart.prevent="emit('fire', true)"
         @touchend.prevent="emit('fire', false)"
       >

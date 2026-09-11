@@ -179,6 +179,16 @@ function isSent(uid) {
 
 <template>
   <div class="flex w-full max-w-md flex-col items-center">
+    <div class="flex w-full justify-start">
+      <button
+        type="button"
+        class="btn-ghost gap-1.5 py-1.5 text-xs"
+        @click="$emit('back')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+    </div>
     <div class="label">Squadron</div>
     <h2 class="font-display mt-2 text-3xl font-bold text-zinc-50" style="letter-spacing: 0.08em;">FRIENDS</h2>
     <p class="font-ui mt-1.5 text-center text-sm font-medium text-zinc-500">
@@ -221,8 +231,7 @@ function isSent(uid) {
           <div
             v-for="r in results"
             :key="r.uid"
-            class="flex items-center gap-3 rounded-xl p-3 transition-colors"
-            style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);"
+            class="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 transition-colors"
           >
             <img v-if="r.photo" :src="r.photo" alt="" class="h-9 w-9 rounded-full object-cover" />
             <div v-else class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-accent" style="background: rgba(56,189,248,0.1);">
@@ -280,8 +289,7 @@ function isSent(uid) {
           <div
             v-for="f in friends"
             :key="f.uid"
-            class="flex items-center gap-3 rounded-xl p-3 transition-colors"
-            style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);"
+            class="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.03] p-3 transition-colors"
           >
             <span
               class="h-2 w-2 shrink-0 rounded-full"

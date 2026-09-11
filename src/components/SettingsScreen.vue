@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue';
+import UiIcon from './UiIcon.vue';
 
 const props = defineProps({
   settings: { type: Object, required: true },
@@ -7,7 +8,7 @@ const props = defineProps({
   canRename: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['toggle-mute', 'toggle-music', 'volume', 'toggle-shake', 'toggle-fps', 'rename', 'back']);
+const emit = defineEmits(['toggle-mute', 'toggle-music', 'volume', 'toggle-shake', 'toggle-fps', 'theme', 'rename', 'back']);
 
 const name = ref(props.pilotName);
 const renameMsg = ref('');
@@ -26,12 +27,22 @@ function saveName() {
 
 <template>
   <div class="flex w-full max-w-md flex-col items-center">
+    <div class="flex w-full justify-start">
+      <button
+        type="button"
+        class="btn-ghost gap-1.5 py-1.5 text-xs"
+        @click="emit('back')"
+      >
+        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+    </div>
     <div class="label">Configuration</div>
     <h2 class="font-display mt-2 text-3xl font-bold text-zinc-50" style="letter-spacing: 0.08em;">SETTINGS</h2>
 
     <div class="panel-elevated mt-6 w-full space-y-1 overflow-hidden p-2">
       <!-- Callsign rename -->
-      <div v-if="canRename" class="rounded-xl p-5" style="background: rgba(255,255,255,0.02);">
+      <!-- <div v-if="canRename" class="rounded-xl p-5" style="background: rgba(255,255,255,0.02);">
         <label class="label mb-2 block" for="settings-callsign">Pilot callsign</label>
         <div class="flex gap-2">
           <input
@@ -45,10 +56,10 @@ function saveName() {
           <button type="button" class="btn-primary px-5" @click="saveName">Save</button>
         </div>
         <p v-if="renameMsg" class="mt-2 text-[12px] text-zinc-500">{{ renameMsg }}</p>
-      </div>
+      </div> -->
 
       <!-- Setting rows -->
-      <div class="divide-y" style="--tw-divide-opacity: 1; border-color: rgba(255,255,255,0.05);">
+      <div class="divide-themed divide-y">
 
         <!-- Sound toggle -->
         <div class="flex items-center justify-between gap-4 px-5 py-4">
@@ -59,18 +70,11 @@ function saveName() {
           <button
             type="button"
             :aria-pressed="!settings.muted"
-            class="toggle-track h-6 w-11 shrink-0"
-            :style="!settings.muted
-              ? 'background: rgba(56,189,248,0.3); border-color: rgba(56,189,248,0.5);'
-              : 'background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);'"
+            class="switch-track-themed"
+            :data-on="!settings.muted"
             @click="emit('toggle-mute')"
           >
-            <span
-              class="inline-block h-4 w-4 rounded-full shadow-sm transition-transform duration-200"
-              :style="!settings.muted
-                ? 'background: #38bdf8; transform: translateX(21px); box-shadow: 0 0 8px rgba(56,189,248,0.6);'
-                : 'background: #52525b; transform: translateX(3px);'"
-            />
+            <span class="switch-thumb" />
           </button>
         </div>
 
@@ -83,18 +87,11 @@ function saveName() {
           <button
             type="button"
             :aria-pressed="settings.music"
-            class="toggle-track h-6 w-11 shrink-0"
-            :style="settings.music
-              ? 'background: rgba(56,189,248,0.3); border-color: rgba(56,189,248,0.5);'
-              : 'background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);'"
+            class="switch-track-themed"
+            :data-on="settings.music"
             @click="emit('toggle-music')"
           >
-            <span
-              class="inline-block h-4 w-4 rounded-full shadow-sm transition-transform duration-200"
-              :style="settings.music
-                ? 'background: #38bdf8; transform: translateX(21px); box-shadow: 0 0 8px rgba(56,189,248,0.6);'
-                : 'background: #52525b; transform: translateX(3px);'"
-            />
+            <span class="switch-thumb" />
           </button>
         </div>
 
@@ -108,7 +105,7 @@ function saveName() {
             <span class="text-[13px] font-semibold text-accent tabular-nums">{{ Math.round(settings.volume * 100) }}%</span>
           </div>
           <div class="relative h-5 flex items-center">
-            <div class="h-1.5 w-full overflow-hidden rounded-full" style="background: rgba(255,255,255,0.08);">
+            <div class="slider-track">
               <div
                 class="h-full rounded-full"
                 style="background: linear-gradient(90deg, #38bdf8, #0ea5e9); transition: width 0.1s;"
@@ -136,18 +133,11 @@ function saveName() {
           <button
             type="button"
             :aria-pressed="settings.shake"
-            class="toggle-track h-6 w-11 shrink-0"
-            :style="settings.shake
-              ? 'background: rgba(56,189,248,0.3); border-color: rgba(56,189,248,0.5);'
-              : 'background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);'"
+            class="switch-track-themed"
+            :data-on="settings.shake"
             @click="emit('toggle-shake')"
           >
-            <span
-              class="inline-block h-4 w-4 rounded-full shadow-sm transition-transform duration-200"
-              :style="settings.shake
-                ? 'background: #38bdf8; transform: translateX(21px); box-shadow: 0 0 8px rgba(56,189,248,0.6);'
-                : 'background: #52525b; transform: translateX(3px);'"
-            />
+            <span class="switch-thumb" />
           </button>
         </div>
 
@@ -160,18 +150,11 @@ function saveName() {
           <button
             type="button"
             :aria-pressed="settings.showFps"
-            class="toggle-track h-6 w-11 shrink-0"
-            :style="settings.showFps
-              ? 'background: rgba(56,189,248,0.3); border-color: rgba(56,189,248,0.5);'
-              : 'background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1);'"
+            class="switch-track-themed"
+            :data-on="settings.showFps"
             @click="emit('toggle-fps')"
           >
-            <span
-              class="inline-block h-4 w-4 rounded-full shadow-sm transition-transform duration-200"
-              :style="settings.showFps
-                ? 'background: #38bdf8; transform: translateX(21px); box-shadow: 0 0 8px rgba(56,189,248,0.6);'
-                : 'background: #52525b; transform: translateX(3px);'"
-            />
+            <span class="switch-thumb" />
           </button>
         </div>
       </div>

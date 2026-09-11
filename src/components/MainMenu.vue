@@ -52,10 +52,7 @@ defineEmits(['single', 'multi', 'settings', 'profile', 'logout']);
         <!-- Single Player card -->
         <button
           type="button"
-          class="group relative overflow-hidden rounded-2xl border p-6 text-left transition-all duration-300"
-          style="background: rgba(14,14,20,0.9); border-color: rgba(255,255,255,0.06);"
-          @mouseenter="$event.currentTarget.style.borderColor='rgba(56,189,248,0.35)'"
-          @mouseleave="$event.currentTarget.style.borderColor='rgba(255,255,255,0.06)'"
+          class="group relative overflow-hidden rounded-2xl border border-white/6 bg-panel/90 p-6 text-left transition-all duration-300 hover:border-accent/35"
           @click="$emit('single')"
         >
           <div class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
@@ -81,13 +78,10 @@ defineEmits(['single', 'multi', 'settings', 'profile', 'logout']);
         <!-- Multiplayer card -->
         <button
           type="button"
-          class="group relative overflow-hidden rounded-2xl border p-6 text-left transition-all duration-300"
+          class="group relative overflow-hidden rounded-2xl border border-white/6 bg-panel/90 p-6 text-left transition-all duration-300 hover:border-missile/35"
           :class="offline ? 'cursor-not-allowed' : ''"
-          style="background: rgba(14,14,20,0.9); border-color: rgba(255,255,255,0.06);"
           :disabled="offline"
           :title="offline ? 'Log in to race friends in live score rooms.' : ''"
-          @mouseenter="!offline && ($event.currentTarget.style.borderColor='rgba(251,146,60,0.35)')"
-          @mouseleave="$event.currentTarget.style.borderColor='rgba(255,255,255,0.06)'"
           @click="$emit('multi')"
         >
           <div class="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"

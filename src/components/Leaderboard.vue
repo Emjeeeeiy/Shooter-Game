@@ -43,14 +43,14 @@ const RANK_STYLES = [
 <template>
   <section class="panel-elevated w-full overflow-hidden">
     <!-- Header -->
-    <div class="flex items-center justify-between gap-2 border-b px-4 py-4" style="border-color: rgba(255,255,255,0.06);">
+    <div class="flex items-center justify-between gap-2 border-b border-white/[0.06] px-4 py-4">
       <div>
         <div class="label">Leaderboard</div>
         <div class="font-display text-sm font-bold text-zinc-100" style="letter-spacing: 0.1em;">TOP PILOTS</div>
       </div>
       <div class="flex items-center gap-2">
         <!-- Tab toggle -->
-        <div class="flex gap-1 rounded-xl p-1" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
+        <div class="flex gap-1 rounded-xl border border-white/[0.06] bg-white/[0.04] p-1">
           <button
             type="button"
             class="font-ui rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all duration-200"
@@ -110,7 +110,7 @@ const RANK_STYLES = [
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <tr class="border-b border-white/[0.05]">
               <th class="label px-4 py-3">#</th>
               <th class="label px-4 py-3">Pilot</th>
               <th class="label px-4 py-3 text-right">Score</th>
@@ -122,8 +122,7 @@ const RANK_STYLES = [
             <tr
               v-for="(entry, index) in entries"
               :key="`${entry.uid ?? entry.name}-${index}`"
-              class="transition-colors"
-              style="border-bottom: 1px solid rgba(255,255,255,0.04);"
+              class="border-b border-white/[0.04] transition-colors"
               :style="index === 0 ? 'background: rgba(251,191,36,0.03);' : ''"
             >
               <td class="px-4 py-3">
@@ -167,7 +166,7 @@ const RANK_STYLES = [
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+            <tr class="border-b border-white/[0.05]">
               <th class="label px-4 py-3">#</th>
               <th class="label px-4 py-3">Pilot</th>
               <th class="label px-4 py-3 text-right">Score</th>
@@ -178,8 +177,7 @@ const RANK_STYLES = [
             <tr
               v-for="(entry, index) in global"
               :key="`${entry.uid ?? entry.name}-${entry.ts}-${index}`"
-              class="transition-colors"
-              style="border-bottom: 1px solid rgba(255,255,255,0.04);"
+              class="border-b border-white/[0.04] transition-colors"
               :style="index === 0 ? 'background: rgba(251,191,36,0.03);' : ''"
             >
               <td class="px-4 py-3">

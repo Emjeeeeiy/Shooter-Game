@@ -164,7 +164,7 @@ function tick() {
 export const music = {
   unlock() {
     gestureSeen = true;
-    if (pendingMood) playMood(pendingMood);
+    if (pendingMood) music.playMood(pendingMood);
     else if (ensure()) applyGain();
   },
   playMood(m) {

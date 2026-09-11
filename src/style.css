@@ -8,6 +8,7 @@
   --color-surface: #08080c;
   --color-panel: #0e0e14;
   --color-panel-hover: #13131c;
+  --color-ink: #08080c;
   --color-accent: #38bdf8;
   --color-accent-glow: #38bdf830;
   --color-danger: #fb7185;
@@ -177,6 +178,70 @@
     color-scheme: dark;
   }
 
+  /* ── Light theme: same token names, mirrored surfaces ─────────────────── */
+  html.light {
+    color-scheme: light;
+    --color-surface: #edf0f5;
+    --color-panel: #ffffff;
+    --color-panel-hover: #f2f5fa;
+    --color-accent: #0284c7;
+    --color-accent-glow: #0284c72e;
+    --color-danger: #e11d48;
+    --color-skill: #b45309;
+    --color-shock: #059669;
+    --color-missile: #ea580c;
+    --color-repair: #16a34a;
+    --color-magnet: #7c3aed;
+    --color-boss: #db2777;
+    --color-border: #0f172a14;
+    --color-border-hover: #0f172a26;
+    /* Mirrored zinc ramp so text utilities invert while hues stay intact. */
+    --color-zinc-50: #18181b;
+    --color-zinc-100: #27272a;
+    --color-zinc-200: #3f3f46;
+    --color-zinc-300: #52525b;
+    --color-zinc-400: #71717a;
+    --color-zinc-500: #71717a;
+    --color-zinc-600: #8e8e96;
+    --color-zinc-700: #d4d4d8;
+    --color-zinc-800: #e4e4e7;
+    --color-zinc-900: #f4f4f5;
+    --color-zinc-950: #ffffff;
+    /* White washes become ink washes so hairlines/cards keep definition. */
+    --color-white: #1d222c;
+  }
+
+  /* Arena force-dark scope retired: the canvas now follows the UI theme. */
+  html.light .theme-dark-retired {
+    color-scheme: dark;
+    --color-surface: #08080c;
+    --color-panel: #0e0e14;
+    --color-panel-hover: #13131c;
+    --color-accent: #38bdf8;
+    --color-accent-glow: #38bdf830;
+    --color-danger: #fb7185;
+    --color-skill: #fbbf24;
+    --color-shock: #34d399;
+    --color-missile: #fb923c;
+    --color-repair: #4ade80;
+    --color-magnet: #a78bfa;
+    --color-boss: #f472b6;
+    --color-border: #ffffff0d;
+    --color-border-hover: #ffffff1a;
+    --color-zinc-50: #fafafa;
+    --color-zinc-100: #f4f4f5;
+    --color-zinc-200: #e4e4e7;
+    --color-zinc-300: #d4d4d8;
+    --color-zinc-400: #a1a1aa;
+    --color-zinc-500: #71717a;
+    --color-zinc-600: #52525b;
+    --color-zinc-700: #3f3f46;
+    --color-zinc-800: #27272a;
+    --color-zinc-900: #18181b;
+    --color-zinc-950: #09090b;
+    --color-white: #ffffff;
+  }
+
   body {
     @apply bg-surface text-zinc-100 antialiased;
     font-family: 'Rajdhani', 'Inter', ui-sans-serif, system-ui, sans-serif;
@@ -264,9 +329,9 @@
   @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-surface;
 }
 
-/* Primary CTA button */
+/* Primary CTA button (fixed dark ink reads on accent in both themes) */
 @utility btn-primary {
-  @apply btn bg-accent text-surface hover:brightness-110 active:scale-95;
+  @apply btn bg-accent text-ink hover:brightness-110 active:scale-95;
 }
 
 /* Ghost / secondary button */
@@ -312,7 +377,131 @@
   @apply w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-accent/50 focus:bg-white/8 focus:outline-none;
 }
 
+/* ─── Tablet compact mode ─────────────────────────────────────────────────── */
+/* Coarse-pointer tablets get a scaled-down UI so menu pages fit without
+   scrolling. rem-based spacing/typography shrink; the canvas is unaffected.
+   Unlayered on purpose so it wins over utilities within this query. */
+@media (pointer: coarse) and (min-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+  .app-content {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+    gap: 1rem;
+  }
+  .app-modal {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+}
+
 /* Rank badge for leaderboard */
 @utility rank-badge {
   @apply inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold tabular-nums;
+}
+
+/* ─── Light theme depth + dimming ─────────────────────────────────────────── */
+html.light .panel,
+html.light .panel-elevated,
+html.light .card {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px -12px rgba(15, 23, 42, 0.12);
+}
+
+html.light .panel-elevated {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
+}
+
+/* Neon menu backdrop stays subtle behind light panels */
+html.light .battle-bg {
+  opacity: 0.35;
+}
+
+/* ─── Theme-aware switch (settings toggles) ───────────────────────────────── */
+@utility switch-track-themed {
+  @apply relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-all duration-200;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+@utility switch-thumb {
+  @apply inline-block h-4 w-4 rounded-full shadow-sm transition-all duration-200;
+  background: #52525b;
+  transform: translateX(3px);
+}
+
+.switch-track-themed[data-on='true'] {
+  background: rgba(56, 189, 248, 0.3);
+  border-color: rgba(56, 189, 248, 0.5);
+}
+
+.switch-track-themed[data-on='true'] .switch-thumb {
+  background: #38bdf8;
+  transform: translateX(21px);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+}
+
+html.light .switch-track-themed {
+  background: rgba(15, 23, 42, 0.08);
+  border-color: rgba(15, 23, 42, 0.14);
+}
+
+html.light .switch-track-themed .switch-thumb {
+  background: #8e8e96;
+}
+
+html.light .switch-track-themed[data-on='true'] {
+  background: rgba(2, 132, 199, 0.25);
+  border-color: rgba(2, 132, 199, 0.45);
+}
+
+html.light .switch-track-themed[data-on='true'] .switch-thumb {
+  background: #0284c7;
+  box-shadow: 0 0 8px rgba(2, 132, 199, 0.5);
+}
+
+/* ─── Theme-aware slider track + hairline divide ──────────────────────────── */
+@utility slider-track {
+  @apply h-1.5 w-full overflow-hidden rounded-full;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html.light .slider-track {
+  background: rgba(15, 23, 42, 0.1);
+}
+
+@utility divide-themed {
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
+html.light .divide-themed {
+  border-color: rgba(15, 23, 42, 0.08);
+}
+
+.divide-themed > * + * {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+html.light .divide-themed > * + * {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
+
+/* ─── Segmented control (theme picker) ────────────────────────────────────── */
+@utility seg-wrap {
+  @apply grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/5 p-1;
+}
+
+@utility seg-btn {
+  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-zinc-500 transition-all hover:text-zinc-300;
+}
+
+@utility seg-btn-active {
+  @apply bg-white/10 text-zinc-100;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
+html.light .seg-btn-active {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
 }

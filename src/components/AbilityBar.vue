@@ -44,7 +44,7 @@ const abilities = computed(() => [
     <div
       v-for="ability in abilities"
       :key="ability.name"
-      class="panel relative w-[104px] overflow-hidden px-3 py-2.5 transition-opacity duration-200"
+      class="panel relative w-26 overflow-hidden px-3 py-2.5 transition-opacity duration-200"
       :class="ability.ready ? 'opacity-100' : 'opacity-70'"
     >
       <div class="relative z-10 flex items-center justify-between gap-2">

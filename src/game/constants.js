@@ -36,6 +36,38 @@ export const palette = {
   dragon: '#f43f5f',
   hydra: '#a3e635',
   flash: '#ffffff',
+  text: '#e4e4e7',
+};
+
+// Light-interface variant of the canvas palette. Same keys: the renderer and
+// the engine pick between the two via game.lightMode, so the whole game map
+// (background, grid, obstacles, tracers, flashes) follows the UI theme while
+// entity identity hues stay recognizable.
+export const lightPalette = {
+  ...palette,
+  surface: '#e9edf4',
+  grid: 'rgba(15, 23, 42, 0.08)',
+  bounds: 'rgba(15, 23, 42, 0.35)',
+  obstacle: '#c7cfdd',
+  obstacleEdge: 'rgba(15, 23, 42, 0.2)',
+  player: '#0284c7',
+  playerDash: '#27272a',
+  bullet: '#3f3f46',
+  accent: '#0284c7',
+  danger: '#e11d48',
+  skill: '#b45309',
+  shock: '#059669',
+  missile: '#ea580c',
+  repair: '#16a34a',
+  magnet: '#7c3aed',
+  boss: '#db2777',
+  charger: '#e11d48',
+  sniper: '#a855f7',
+  splitter: '#b45309',
+  dragon: '#e11d48',
+  hydra: '#4d7c0f',
+  flash: '#64748b',
+  text: '#3f3f46',
 };
 
 export const player = {
@@ -568,6 +600,8 @@ export const spawn = {
   intervalStepPerWave: 2,
   intervalStepPerTier: 6,
   killsPerWave: 10,
+  // Race rooms: one wave per 25s on the shared clock (not per kill).
+  waveTicks: 1500,
   obstacleCount: 26,
   maxEnemies: 60,
   maxSpeed: 4.2,

@@ -58,7 +58,7 @@ watch(() => props.pilot, (p) => {
   <Teleport to="body">
     <div
       v-if="pilot"
-      class="fixed inset-0 z-[60] flex items-center justify-center p-4"
+      class="fixed inset-0 z-60 flex items-center justify-center p-4"
       style="background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);"
       @click.self="$emit('close')"
     >
@@ -69,7 +69,7 @@ watch(() => props.pilot, (p) => {
         :aria-label="`Profile: ${pilot.name}`"
       >
         <!-- Header bar -->
-        <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: rgba(255,255,255,0.06);">
+        <div class="flex items-center justify-between border-b border-white/6 px-5 py-4">
           <div class="label">Pilot Profile</div>
           <button
             type="button"
@@ -134,8 +134,7 @@ watch(() => props.pilot, (p) => {
               </div>
             </div>
             <div
-              class="rounded-xl p-3.5 text-center"
-              style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);"
+              class="rounded-xl border border-white/8 bg-white/3 p-3.5 text-center"
             >
               <div class="label text-[9px]">Runs Flown</div>
               <div class="font-display mt-1.5 text-xl font-bold text-zinc-100 tabular-nums" style="letter-spacing: 0.02em;">
