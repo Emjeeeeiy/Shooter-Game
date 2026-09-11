@@ -498,260 +498,246 @@ async function onRunSaved({ score, wave, stats }) {
 </script>
 
 <template>
-  <div :class="screen === 'arena' ? 'h-dvh w-full overflow-hidden' : 'min-h-dvh w-full px-4 py-8 sm:px-6 lg:py-10'">
+  <div :class="screen === 'arena' ? 'h-dvh w-full overflow-hidden' : 'min-h-dvh w-full'">
     <BattleBackground v-if="screen !== 'arena'" />
-    <div :class="screen === 'arena' ? 'relative z-10 mx-auto flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6'">
-      <header v-if="screen !== 'arena'" class="sticky top-0 z-40 w-full border-b border-white/5 bg-surface/85 backdrop-blur-md">
-        <div class="flex items-center justify-between gap-4 py-3">
+
+    <!-- ─── Global Topbar ──────────────────────────────────────────────── -->
+    <header
+      v-if="screen !== 'arena'"
+      class="sticky top-0 z-40 w-full"
+      style="background: rgba(8,8,12,0.85); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border-bottom: 1px solid rgba(255,255,255,0.05);"
+    >
+      <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <!-- Left: Logo -->
+        <div class="flex items-center gap-3">
+          <button
+            v-if="backAction"
+            type="button"
+            class="btn-ghost mr-1 gap-1.5 py-1.5 text-xs"
+            @click="backAction()"
+          >
+            <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
           <div class="flex items-center gap-2.5">
-            <span class="h-2 w-2 rounded-full bg-accent" />
-            <h1 class="text-sm font-semibold tracking-[0.22em] text-zinc-200 uppercase">
+            <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.25);">
+              <span class="h-2 w-2 rounded-full bg-accent" style="box-shadow: 0 0 8px 2px rgba(56,189,248,0.6);" />
+            </div>
+            <h1 class="font-display text-sm font-bold tracking-[0.25em] text-zinc-100 uppercase">
               Neon Strike
             </h1>
           </div>
-          <div class="flex items-center gap-3">
-            <p class="hidden text-[13px] text-zinc-500 sm:block">Top-down arena shooter</p>
-            <button
-              v-if="authReady && (user || offline)"
-              type="button"
-              title="Notifications"
-              aria-label="Notifications"
-              class="relative rounded-full border border-white/10 p-2 text-zinc-300 transition-colors hover:border-white/30 hover:text-zinc-100"
-              @click="toggleNotifs"
-            >
-              <UiIcon name="bell" cls="h-4 w-4" />
-              <span
-                v-if="bellCount > 0"
-                class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold text-white tabular-nums"
-              >
-                {{ bellCount }}
-              </span>
-            </button>
-            <button
-              v-if="canCloud"
-              type="button"
-              title="Search pilots / friends"
-              aria-label="Search pilots and friends"
-              class="relative rounded-full border border-white/10 p-2 text-zinc-300 transition-colors hover:border-white/30 hover:text-zinc-100"
-              @click="screen = 'friends'"
-            >
-              <UiIcon name="search" cls="h-4 w-4" />
-              <span
-                v-if="friendPending > 0"
-                class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-surface tabular-nums"
-              >
-                {{ friendPending }}
-              </span>
-            </button>
+          <span class="hidden text-[11px] text-zinc-600 sm:block">Top-down arena shooter</span>
+        </div>
+
+        <!-- Right: Action Icons -->
+        <div class="flex items-center gap-1.5">
+          <!-- Notifications bell -->
+          <button
+            v-if="authReady && (user || offline)"
+            id="notif-btn"
+            type="button"
+            title="Notifications"
+            aria-label="Notifications"
+            class="relative btn-icon"
+            :class="showNotifs ? 'btn-icon-active' : ''"
+            @click="toggleNotifs"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
             <span
-              v-if="user && !offline"
-              class="hidden items-center gap-1.5 rounded-full border border-white/10 px-2.5 py-1 text-[11px] font-medium text-zinc-300 sm:flex"
-            >
-              <img
-                v-if="profilePhoto"
-                :src="profilePhoto"
-                alt=""
-                class="h-4 w-4 rounded-full object-cover"
-              />
-              <UiIcon v-else name="user" cls="h-3.5 w-3.5" />{{ pilotName }}
-            </span>
+              v-if="bellCount > 0"
+              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold text-white tabular-nums"
+              style="box-shadow: 0 0 8px rgba(251,113,133,0.7);"
+            >{{ bellCount }}</span>
+          </button>
+
+          <!-- Friends / Search -->
+          <button
+            v-if="canCloud"
+            id="friends-btn"
+            type="button"
+            title="Search pilots & friends"
+            aria-label="Search pilots and friends"
+            class="relative btn-icon"
+            :class="screen === 'friends' ? 'btn-icon-active' : ''"
+            @click="screen = 'friends'"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <span
+              v-if="friendPending > 0"
+              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-surface tabular-nums"
+              style="box-shadow: 0 0 8px rgba(56,189,248,0.7);"
+            >{{ friendPending }}</span>
+          </button>
+
+          <!-- Divider -->
+          <div v-if="authReady && (user || offline)" class="mx-1 h-5 w-px bg-white/10" />
+
+          <!-- Profile icon -->
+          <button
+            v-if="authReady && (user || offline)"
+            id="profile-btn"
+            type="button"
+            title="Profile"
+            aria-label="View profile"
+            class="btn-icon"
+            :class="screen === 'profile' ? 'btn-icon-active' : ''"
+            @click="screen = 'profile'"
+          >
+            <img
+              v-if="profilePhoto"
+              :src="profilePhoto"
+              alt=""
+              class="h-5 w-5 rounded-full object-cover"
+            />
+            <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </button>
+
+          <!-- Settings icon -->
+          <button
+            v-if="authReady && (user || offline)"
+            id="settings-btn"
+            type="button"
+            title="Settings"
+            aria-label="Open settings"
+            class="btn-icon"
+            :class="screen === 'settings' ? 'btn-icon-active' : ''"
+            @click="screen = 'settings'"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </button>
+
+          <!-- Pilot name chip (sm+) -->
+          <div
+            v-if="user && !offline"
+            class="hidden items-center gap-2 rounded-xl px-3 py-1.5 text-[12px] font-medium text-zinc-300 sm:flex"
+            style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);"
+          >
+            <span class="max-w-24 truncate">{{ pilotName }}</span>
           </div>
         </div>
-        <div v-if="backAction" class="pb-3">
-          <button
-            type="button"
-            class="rounded-lg border border-white/12 px-4 py-2 text-[12px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
-            @click="backAction()"
-          >
-            ← Back
-          </button>
-        </div>
-      </header>
+      </div>
+    </header>
 
+    <!-- ─── Main Content Area ─────────────────────────────────────────── -->
+    <div :class="screen === 'arena' ? 'relative z-10 flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6 px-4 py-8 sm:px-6 lg:py-10'">
+
+      <!-- Invite banners (floating, top-center) -->
       <div
         v-if="invites.length && screen !== 'auth' && screen !== 'arena'"
-        class="fixed top-4 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 space-y-2 px-4"
+        class="fixed top-20 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 space-y-2 px-4"
       >
         <div
           v-for="inv in invites"
           :key="inv.id"
-          class="panel flex items-center gap-3 p-3 shadow-2xl"
+          class="panel-elevated flex animate-slide-up items-center gap-3 p-4"
+          style="border-color: rgba(56,189,248,0.2);"
         >
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-semibold text-zinc-100">
-              {{ inv.fromName }} invited you
-            </div>
-            <div class="text-[11px] text-zinc-500">
-              Room {{ inv.roomCode }} · {{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}
-            </div>
+          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style="background: rgba(56,189,248,0.15);">
+            <svg class="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="21" r="1"/><circle cx="7" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
           </div>
-          <button
-            type="button"
-            class="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-surface hover:bg-sky-300"
-            @click="acceptInvite(inv)"
-          >
-            Join
-          </button>
-          <button
-            type="button"
-            class="rounded-lg border border-white/12 px-2.5 py-1.5 text-[12px] text-zinc-400 hover:border-white/30"
-            @click="declineInvite(inv)"
-          >
-            ✕
-          </button>
+          <div class="min-w-0 flex-1">
+            <div class="truncate text-sm font-semibold text-zinc-100">{{ inv.fromName }} invited you</div>
+            <div class="text-[11px] text-zinc-500">Room {{ inv.roomCode }} · {{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}</div>
+          </div>
+          <button type="button" class="btn-primary py-1.5 px-3 text-xs" @click="acceptInvite(inv)">Join</button>
+          <button type="button" class="btn-ghost py-1.5 px-2 text-xs" @click="declineInvite(inv)">✕</button>
         </div>
-        <p v-if="inviteError" class="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-          {{ inviteError }}
-        </p>
+        <p v-if="inviteError" class="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">{{ inviteError }}</p>
       </div>
 
+      <!-- Toast notifications (floating, top-left) -->
       <div
         v-if="toastNotifs.length && screen !== 'auth'"
-        class="fixed top-16 left-4 z-50 w-full max-w-xs space-y-2"
+        class="fixed top-20 left-4 z-50 w-full max-w-xs space-y-2"
       >
         <div
           v-for="n in toastNotifs"
           :key="n.id"
-          class="panel flex items-start gap-3 border-l-2 p-3 shadow-2xl"
+          class="panel-elevated animate-slide-up flex items-start gap-3 border-l-2 p-4"
           :class="n.kind === 'best' ? 'border-l-accent' : 'border-l-repair'"
         >
           <span
             class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold"
             :class="n.kind === 'best' ? 'bg-accent/15 text-accent' : 'bg-repair/15 text-repair'"
-          >
-            {{ n.kind === 'best' ? '★' : '♥' }}
-          </span>
+          >{{ n.kind === 'best' ? '★' : '♥' }}</span>
           <div class="min-w-0 flex-1">
             <div class="truncate text-sm font-semibold text-zinc-100">{{ n.title }}</div>
             <div class="text-[12px] text-zinc-400">{{ n.body }}</div>
-            <button
-              v-if="n.target"
-              type="button"
-              class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300"
-              @click="goNotif(n)"
-            >
-              View →
-            </button>
+            <button v-if="n.target" type="button" class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300" @click="goNotif(n)">View →</button>
           </div>
-          <button
-            type="button"
-            class="shrink-0 rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200"
-            @click="dismissNotif(n.id)"
-          >
-            ✕
-          </button>
+          <button type="button" class="shrink-0 rounded-lg p-1 text-zinc-500 transition-colors hover:text-zinc-200" @click="dismissNotif(n.id)">✕</button>
         </div>
       </div>
 
-      <div
-        v-if="showNotifs && screen !== 'auth'"
-        class="fixed top-16 right-4 z-50 w-full max-w-xs"
-      >
-        <div class="panel p-3 shadow-2xl">
-          <div class="flex items-center justify-between px-1 pt-1 pb-2">
+      <!-- Notification dropdown panel -->
+      <div v-if="showNotifs && screen !== 'auth'" class="fixed top-[60px] right-4 z-50 w-full max-w-sm">
+        <div class="panel-elevated p-4" style="border-color: rgba(255,255,255,0.08);">
+          <div class="mb-3 flex items-center justify-between">
             <span class="text-sm font-semibold text-zinc-100">Notifications</span>
-            <div class="flex items-center gap-3">
-              <button
-                v-if="notifs.length"
-                type="button"
-                class="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-200"
-                @click="clearNotifs"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                aria-label="Close notifications"
-                class="rounded-md p-1 text-zinc-500 transition-colors hover:text-zinc-200"
-                @click="showNotifs = false"
-              >
-                ✕
+            <div class="flex items-center gap-2">
+              <button v-if="notifs.length" type="button" class="text-[11px] font-medium text-zinc-500 hover:text-zinc-200" @click="clearNotifs">Clear all</button>
+              <button type="button" aria-label="Close" class="btn-icon p-1" @click="showNotifs = false">
+                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
           </div>
-          <div v-if="!notifs.length && !invites.length" class="px-1 py-4 text-center text-[13px] text-zinc-600">
-            No notifications yet.
-          </div>
-          <div v-if="invites.length" class="mb-2 space-y-2">
-            <div class="label px-1">Room invites ({{ invites.length }})</div>
-            <div
-              v-for="inv in invites"
-              :key="inv.id"
-              class="flex items-center gap-2.5 rounded-lg border border-accent/30 bg-accent/5 p-2.5"
-            >
+          <div v-if="!notifs.length && !invites.length" class="py-6 text-center text-[13px] text-zinc-600">Nothing here yet.</div>
+          <div v-if="invites.length" class="mb-3 space-y-2">
+            <div class="label mb-1.5">Room invites ({{ invites.length }})</div>
+            <div v-for="inv in invites" :key="inv.id" class="flex items-center gap-2.5 rounded-xl border border-accent/20 bg-accent/5 p-3">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-semibold text-zinc-100">{{ inv.fromName }} invited you</div>
-                <div class="text-[11px] text-zinc-500">
-                  Room {{ inv.roomCode }} · {{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}
-                </div>
+                <div class="text-[11px] text-zinc-500">{{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }} · Room {{ inv.roomCode }}</div>
               </div>
-              <button
-                type="button"
-                class="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-surface hover:bg-sky-300"
-                @click="acceptInvite(inv)"
-              >
-                Join
-              </button>
-              <button
-                type="button"
-                aria-label="Decline invite"
-                class="shrink-0 rounded-md p-1.5 text-zinc-400 transition-colors hover:text-zinc-200"
-                @click="declineInvite(inv)"
-              >
-                ✕
-              </button>
+              <button type="button" class="btn-primary py-1 px-3 text-xs" @click="acceptInvite(inv)">Join</button>
+              <button type="button" class="btn-ghost py-1 px-2 text-xs" @click="declineInvite(inv)">✕</button>
             </div>
           </div>
-          <div v-if="notifs.length" class="max-h-80 space-y-2 overflow-y-auto">
-            <div
-              v-for="n in [...notifs].reverse()"
-              :key="n.id"
-              class="flex items-start gap-3 rounded-lg border border-white/10 bg-white/5 p-2.5"
-            >
-              <span
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-                :class="n.kind === 'best' ? 'bg-accent/15 text-accent' : 'bg-repair/15 text-repair'"
-              >
+          <div v-if="notifs.length" class="max-h-72 space-y-2 overflow-y-auto">
+            <div v-for="n in [...notifs].reverse()" :key="n.id" class="flex items-start gap-3 rounded-xl border border-white/6 bg-white/3 p-3">
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                :class="n.kind === 'best' ? 'bg-accent/15 text-accent' : 'bg-repair/15 text-repair'">
                 {{ n.kind === 'best' ? '★' : '♥' }}
               </span>
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-semibold text-zinc-100">{{ n.title }}</div>
                 <div class="text-[12px] text-zinc-400">{{ n.body }}</div>
-                <button
-                  v-if="n.target"
-                  type="button"
-                  class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300"
-                  @click="goNotif(n)"
-                >
-                  View →
-                </button>
+                <button v-if="n.target" type="button" class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300" @click="goNotif(n)">View →</button>
               </div>
             </div>
           </div>
         </div>
       </div>
 
+      <!-- Friend request nudge (bottom banner) -->
       <div
         v-if="friendPending > 0 && screen !== 'auth' && screen !== 'arena' && screen !== 'friends'"
         class="fixed bottom-4 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 px-4"
       >
         <button
           type="button"
-          class="panel flex w-full items-center gap-3 p-3 text-left shadow-2xl transition-colors hover:border-accent/50"
+          class="panel-elevated flex w-full animate-slide-up items-center gap-3 p-4 text-left transition-all hover:border-accent/30"
           @click="screen = 'friends'"
         >
-          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">
-            {{ friendPending }}
-          </span>
-          <span class="min-w-0 flex-1 text-sm font-semibold text-zinc-100">
-            {{ friendPending === 1 ? '1 pilot wants to be friends' : `${friendPending} pilots want to be friends` }}
-          </span>
+          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">{{ friendPending }}</span>
+          <span class="min-w-0 flex-1 text-sm font-semibold text-zinc-100">{{ friendPending === 1 ? '1 pilot wants to be friends' : `${friendPending} pilots want to be friends` }}</span>
           <span class="shrink-0 text-[12px] font-semibold text-accent">View →</span>
         </button>
       </div>
 
+      <!-- Loading state -->
       <div v-if="!authReady" class="py-20 text-[13px] text-zinc-500">Contacting command…</div>
 
+      <!-- ─── Screens ──────────────────────────────────────────────────── -->
       <AuthScreen v-else-if="screen === 'auth'" @authed="onAuthed" />
 
       <MainMenu

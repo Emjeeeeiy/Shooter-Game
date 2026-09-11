@@ -5,9 +5,11 @@
  * the DOM never drift apart.
  */
 @theme {
-  --color-surface: #09090b;
-  --color-panel: #101013;
+  --color-surface: #08080c;
+  --color-panel: #0e0e14;
+  --color-panel-hover: #13131c;
   --color-accent: #38bdf8;
+  --color-accent-glow: #38bdf830;
   --color-danger: #fb7185;
   --color-skill: #fbbf24;
   --color-shock: #34d399;
@@ -15,8 +17,12 @@
   --color-repair: #4ade80;
   --color-magnet: #a78bfa;
   --color-boss: #f472b6;
+  --color-border: #ffffff0d;
+  --color-border-hover: #ffffff1a;
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Rajdhani', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Orbitron', 'Rajdhani', sans-serif;
+  --font-ui: 'Rajdhani', 'Inter', ui-sans-serif, sans-serif;
 
   --animate-banner: banner 1.8s ease-out forwards;
   --animate-notice: notice 2.2s ease-out forwards;
@@ -24,6 +30,10 @@
   --animate-shake-small: shake-small 0.25s ease-in-out;
   --animate-shake-big: shake-big 0.55s ease-in-out;
   --animate-combo: combo 0.25s ease-out;
+  --animate-fade-in: fade-in 0.25s ease-out;
+  --animate-slide-up: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pulse-glow: pulse-glow 2.5s ease-in-out infinite;
+  --animate-float: float 3s ease-in-out infinite;
 }
 
 @keyframes banner {
@@ -118,13 +128,60 @@
   }
 }
 
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 0.6;
+    box-shadow: 0 0 12px 2px var(--color-accent-glow);
+  }
+  50% {
+    opacity: 1;
+    box-shadow: 0 0 24px 6px var(--color-accent-glow);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+
 @layer base {
   html {
     color-scheme: dark;
   }
 
   body {
-    @apply bg-surface text-zinc-100 font-sans antialiased;
+    @apply bg-surface text-zinc-100 antialiased;
+    font-family: 'Rajdhani', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-size: 16px;
+    letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
   }
 
@@ -147,10 +204,115 @@
   }
 }
 
+/* ─── Utilities ─────────────────────────────────────────────────────────── */
+
 @utility label {
-  @apply text-[10px] font-medium tracking-[0.18em] text-zinc-500 uppercase;
+  font-family: 'Rajdhani', sans-serif;
+  @apply text-[10px] font-semibold tracking-[0.22em] text-zinc-500 uppercase;
 }
 
+/* Orbitron — game title, GAME OVER, large scores, wave headings */
+@utility font-display {
+  font-family: 'Orbitron', sans-serif;
+  letter-spacing: 0.04em;
+}
+
+/* Rajdhani — buttons, nav, HUD labels, menus */
+@utility font-ui {
+  font-family: 'Rajdhani', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Base glass panel */
 @utility panel {
-  @apply rounded-xl border border-white/10 bg-panel/80 backdrop-blur-sm;
+  @apply rounded-2xl border border-white/[0.06] bg-panel/90 backdrop-blur-xl;
+}
+
+/* Elevated glass panel with subtle glow */
+@utility panel-elevated {
+  @apply rounded-2xl border border-white/10 bg-panel/95 backdrop-blur-2xl shadow-2xl;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 24px 48px -12px rgba(0,0,0,0.7), 0 8px 16px rgba(0,0,0,0.5);
+}
+
+/* Interactive card */
+@utility card {
+  @apply rounded-2xl border border-white/[0.06] bg-panel/80 backdrop-blur-xl transition-all duration-200;
+}
+
+/* Accent glow border */
+@utility glow-accent {
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3), 0 0 20px rgba(56, 189, 248, 0.15);
+}
+
+/* Danger glow border */
+@utility glow-danger {
+  box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.3), 0 0 20px rgba(251, 113, 133, 0.1);
+}
+
+/* Skill glow border */
+@utility glow-skill {
+  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3), 0 0 20px rgba(251, 191, 36, 0.1);
+}
+
+/* Page section fade-in */
+@utility screen-enter {
+  @apply animate-fade-in;
+}
+
+/* Button base style */
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-surface;
+}
+
+/* Primary CTA button */
+@utility btn-primary {
+  @apply btn bg-accent text-surface hover:brightness-110 active:scale-95;
+}
+
+/* Ghost / secondary button */
+@utility btn-ghost {
+  @apply btn border border-white/10 text-zinc-300 hover:border-white/20 hover:bg-white/5 hover:text-zinc-100 active:scale-95;
+}
+
+/* Danger button */
+@utility btn-danger {
+  @apply btn border border-danger/30 text-danger hover:bg-danger/10 hover:border-danger/50 active:scale-95;
+}
+
+/* Icon button */
+@utility btn-icon {
+  @apply inline-flex items-center justify-center rounded-xl border border-white/10 p-2 text-zinc-400 transition-all duration-150 hover:border-white/20 hover:bg-white/5 hover:text-zinc-200 active:scale-95;
+}
+
+/* Active icon button */
+@utility btn-icon-active {
+  @apply inline-flex items-center justify-center rounded-xl p-2 transition-all duration-150 active:scale-95;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  color: #38bdf8;
+}
+
+/* Toggle switch track */
+@utility toggle-track {
+  @apply relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full border transition-all duration-200;
+}
+
+/* Stat bar filled segment */
+@utility stat-pip-active {
+  @apply h-1.5 w-6 rounded-full;
+}
+
+/* Stat bar empty segment */
+@utility stat-pip-empty {
+  @apply h-1.5 w-6 rounded-full bg-white/10;
+}
+
+/* Input field */
+@utility input-field {
+  @apply w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-accent/50 focus:bg-white/8 focus:outline-none;
+}
+
+/* Rank badge for leaderboard */
+@utility rank-badge {
+  @apply inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold tabular-nums;
 }

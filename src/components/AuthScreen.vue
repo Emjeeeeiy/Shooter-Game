@@ -45,130 +45,118 @@ function offline() {
 
 <template>
   <div class="flex w-full max-w-md flex-col items-center">
-    <div class="label">Neon Strike</div>
-    <h2 class="mt-1 text-3xl font-semibold text-zinc-50">Pilot access</h2>
-    <p class="mt-2 text-center text-[13px] text-zinc-500">
+    <!-- Logo / branding -->
+    <div class="mb-2 flex items-center justify-center">
+      <div
+        class="flex h-12 w-12 items-center justify-center rounded-2xl"
+        style="background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.25); box-shadow: 0 0 30px rgba(56,189,248,0.15);"
+      >
+        <span class="h-3 w-3 rounded-full bg-accent" style="box-shadow: 0 0 12px 3px rgba(56,189,248,0.7);" />
+      </div>
+    </div>
+    <div class="label mt-1">Neon Strike</div>
+    <h2 class="font-display mt-2 text-3xl font-bold text-zinc-50" style="letter-spacing: 0.08em;">PILOT ACCESS</h2>
+    <p class="font-ui mt-2 text-center text-sm font-medium text-zinc-500">
       Log in to race friends and post global scores — or fly offline.
     </p>
 
-    <div class="panel mt-6 w-full p-6 sm:p-7">
-      <div class="grid grid-cols-2 gap-2 rounded-lg bg-white/5 p-1">
+    <!-- Card -->
+    <div class="panel-elevated mt-7 w-full p-7">
+      <!-- Mode tabs -->
+      <div class="grid grid-cols-2 gap-1 rounded-xl p-1" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
         <button
           type="button"
-          class="rounded-md px-3 py-2 text-sm font-medium transition-colors"
-          :class="mode === 'login' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
+          class="rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-200"
+          :class="mode === 'login' ? 'bg-white/10 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'"
           @click="mode = 'login'"
         >
           Log in
         </button>
         <button
           type="button"
-          class="rounded-md px-3 py-2 text-sm font-medium transition-colors"
-          :class="mode === 'register' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
+          class="rounded-lg px-3 py-2.5 text-sm font-semibold transition-all duration-200"
+          :class="mode === 'register' ? 'bg-white/10 text-zinc-100 shadow-sm' : 'text-zinc-500 hover:text-zinc-300'"
           @click="mode = 'register'"
         >
           Register
         </button>
       </div>
 
-      <form class="mt-5 space-y-3" @submit.prevent="submit">
+      <form class="mt-5 space-y-4" @submit.prevent="submit">
         <div v-if="mode === 'register'">
-          <label class="label block" for="auth-pilot">Pilot callsign</label>
+          <label class="label mb-2 block" for="auth-pilot">Pilot Callsign</label>
           <input
             id="auth-pilot"
             v-model="pilot"
             type="text"
             maxlength="20"
             placeholder="e.g. Nova"
-            class="mt-1.5 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-accent/60 focus:outline-none"
+            class="input-field"
           />
         </div>
         <div>
-          <label class="label block" for="auth-email">Email</label>
+          <label class="label mb-2 block" for="auth-email">Email Address</label>
           <input
             id="auth-email"
             v-model="email"
             type="email"
             autocomplete="email"
             placeholder="pilot@example.com"
-            class="mt-1.5 w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:border-accent/60 focus:outline-none"
+            class="input-field"
           />
         </div>
         <div>
-          <label class="label block" for="auth-pass">Password</label>
-          <div class="relative mt-1.5">
+          <label class="label mb-2 block" for="auth-pass">Password</label>
+          <div class="relative">
             <input
               id="auth-pass"
               v-model="password"
               :type="showPass ? 'text' : 'password'"
               :autocomplete="mode === 'register' ? 'new-password' : 'current-password'"
               placeholder="••••••••"
-              class="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 pr-11 text-sm text-zinc-100 placeholder-zinc-600 focus:border-accent/60 focus:outline-none"
+              class="input-field pr-11"
             />
             <button
               type="button"
-              class="absolute top-1/2 right-2 -translate-y-1/2 rounded-md p-1.5 text-zinc-500 transition-colors hover:text-zinc-200"
+              class="absolute top-1/2 right-3 -translate-y-1/2 rounded-lg p-1 text-zinc-500 transition-colors hover:text-zinc-300"
               :aria-label="showPass ? 'Hide password' : 'Show password'"
-              :title="showPass ? 'Hide password' : 'Show password'"
               @click="showPass = !showPass"
             >
-              <svg
-                v-if="showPass"
-                class="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
-                <line x1="1" y1="1" x2="23" y2="23" />
+              <svg v-if="showPass" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" /><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" /><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" />
               </svg>
-              <svg
-                v-else
-                class="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                <circle cx="12" cy="12" r="3" />
+              <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
               </svg>
             </button>
           </div>
         </div>
 
-        <p v-if="error" class="rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
+        <p v-if="error" class="rounded-xl border border-danger/30 bg-danger/10 px-3.5 py-2.5 text-[12px] text-danger">
           {{ error }}
         </p>
 
         <button
           type="submit"
           :disabled="busy"
-          class="w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-surface transition-colors hover:bg-sky-300 disabled:opacity-60"
+          class="btn-primary font-ui w-full py-3 text-sm font-bold tracking-widest"
         >
+          <svg v-if="busy" class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
           {{ busy ? 'Working…' : mode === 'register' ? 'Create account' : 'Log in' }}
         </button>
       </form>
 
-      <button
-        type="button"
-        class="mt-3 w-full rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-zinc-400 transition-colors hover:border-white/25 hover:text-zinc-100"
-        @click="offline"
-      >
-        Continue offline
-      </button>
-      <p class="mt-3 text-center text-[11px] text-zinc-600">
-        Offline mode: single player + local scores only.
-      </p>
+      <div class="mt-3 flex flex-col gap-2">
+        <button
+          type="button"
+          class="btn-ghost w-full py-3 text-sm"
+          @click="offline"
+        >
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 12h.01"/><path d="M17 5H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"/></svg>
+          Continue offline
+        </button>
+        <p class="text-center text-[11px] text-zinc-700">Single player + local scores only.</p>
+      </div>
     </div>
   </div>
 </template>

@@ -4,13 +4,13 @@ import { useLeaderboard } from '../composables/useLeaderboard.js';
 import { useCloudBoard } from '../composables/useCloudBoard.js';
 
 const props = defineProps({
-  cloud: { type: Boolean, default: false }, // signed-in && online
+  cloud: { type: Boolean, default: false },
 });
 
 const { entries, clear, exportJson } = useLeaderboard();
 const { global, loading, error, loadGlobal } = useCloudBoard();
 
-const tab = ref('local'); // 'local' | 'global'
+const tab = ref('local');
 
 watch(tab, (t) => {
   if (t === 'global' && props.cloud) loadGlobal();
@@ -32,141 +32,172 @@ function fmtTime(sec) {
   const s = Math.floor(sec % 60);
   return `${m}:${String(s).padStart(2, '0')}`;
 }
+
+const RANK_STYLES = [
+  { bg: 'rgba(251,191,36,0.15)', color: '#fbbf24', label: '🥇' },
+  { bg: 'rgba(161,161,170,0.15)', color: '#a1a1aa', label: '🥈' },
+  { bg: 'rgba(180,120,80,0.15)', color: '#b47850', label: '🥉' },
+];
 </script>
 
 <template>
-  <section class="panel w-full overflow-hidden">
-    <header class="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
-      <div class="flex items-center gap-1 rounded-lg bg-white/5 p-1">
-        <button
-          type="button"
-          class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors"
-          :class="tab === 'local' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
-          @click="tab = 'local'"
-        >
-          Local
-        </button>
-        <button
-          type="button"
-          class="rounded-md px-2.5 py-1 text-[11px] font-semibold transition-colors"
-          :class="tab === 'global' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
-          :disabled="!cloud"
-          :title="cloud ? 'Worldwide scores' : 'Log in to see global scores'"
-          @click="tab = 'global'"
-        >
-          Global
-        </button>
+  <section class="panel-elevated w-full overflow-hidden">
+    <!-- Header -->
+    <div class="flex items-center justify-between gap-2 border-b px-4 py-4" style="border-color: rgba(255,255,255,0.06);">
+      <div>
+        <div class="label">Leaderboard</div>
+        <div class="font-display text-sm font-bold text-zinc-100" style="letter-spacing: 0.1em;">TOP PILOTS</div>
       </div>
-      <h2 class="hidden text-sm font-semibold text-zinc-200 sm:block" title="One entry per account — best score kept">Top pilots</h2>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2">
+        <!-- Tab toggle -->
+        <div class="flex gap-1 rounded-xl p-1" style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);">
+          <button
+            type="button"
+            class="font-ui rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all duration-200"
+            :class="tab === 'local' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
+            @click="tab = 'local'"
+          >
+            LOCAL
+          </button>
+          <button
+            type="button"
+            class="font-ui rounded-lg px-3 py-1.5 text-[11px] font-bold tracking-widest transition-all duration-200"
+            :class="tab === 'global' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300'"
+            :disabled="!cloud"
+            :title="cloud ? 'Worldwide scores' : 'Log in to see global scores'"
+            @click="tab = 'global'"
+          >
+            GLOBAL
+          </button>
+        </div>
+        <!-- Actions -->
         <button
           v-if="tab === 'local' && entries.length"
           type="button"
-          class="rounded-md border border-white/12 px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
+          class="btn-ghost p-2 text-[11px]"
+          title="Export leaderboard JSON"
           @click="onExport"
         >
-          Export
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         </button>
         <button
           v-if="tab === 'local' && entries.length"
           type="button"
-          class="rounded-md border border-white/12 px-2 py-1 text-[11px] font-medium text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-100"
+          class="btn-ghost p-2 text-[11px] hover:border-danger/30 hover:text-danger"
+          title="Clear local leaderboard"
           @click="clear"
         >
-          Clear
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
         </button>
         <button
           v-if="tab === 'global' && cloud"
           type="button"
-          class="text-[11px] font-medium text-zinc-500 transition-colors hover:text-zinc-300"
+          class="btn-ghost p-2 text-[11px]"
+          title="Refresh global board"
           @click="loadGlobal"
         >
-          Refresh
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         </button>
       </div>
-    </header>
+    </div>
 
-    <!-- Local -->
+    <!-- Local board -->
     <template v-if="tab === 'local'">
-      <div v-if="!entries.length" class="px-4 py-8 text-center text-[13px] text-zinc-600">
-        No runs recorded yet.
+      <div v-if="!entries.length" class="px-4 py-10 text-center">
+        <div class="mb-2 text-3xl">🎮</div>
+        <p class="text-[13px] text-zinc-600">No runs recorded yet.<br/>Complete a run to see your score here.</p>
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b border-white/5">
-              <th class="label px-4 py-2 font-medium">Rank</th>
-              <th class="label px-4 py-2 font-medium">Pilot</th>
-              <th class="label px-4 py-2 text-right font-medium">Score</th>
-              <th class="label px-4 py-2 text-right font-medium">Wave</th>
-              <th class="label px-4 py-2 text-right font-medium">Kills</th>
-              <th class="label px-4 py-2 text-right font-medium">Time</th>
-              <th class="label px-4 py-2 text-right font-medium">Date</th>
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+              <th class="label px-4 py-3">#</th>
+              <th class="label px-4 py-3">Pilot</th>
+              <th class="label px-4 py-3 text-right">Score</th>
+              <th class="label px-4 py-3 text-right">Wave</th>
+              <th class="label hidden px-4 py-3 text-right sm:table-cell">Time</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(entry, index) in entries"
               :key="`${entry.uid ?? entry.name}-${index}`"
-              class="border-b border-white/5 last:border-0"
+              class="transition-colors"
+              style="border-bottom: 1px solid rgba(255,255,255,0.04);"
+              :style="index === 0 ? 'background: rgba(251,191,36,0.03);' : ''"
             >
-              <td class="px-4 py-2.5 text-zinc-500 tabular-nums">{{ index + 1 }}</td>
-              <td class="px-4 py-2.5 font-medium" :class="index === 0 ? 'text-accent' : 'text-zinc-200'">
+              <td class="px-4 py-3">
+                <span v-if="index < 3"
+                  class="rank-badge text-sm"
+                  :style="`background: ${RANK_STYLES[index].bg}; color: ${RANK_STYLES[index].color};`"
+                >
+                  {{ RANK_STYLES[index].label }}
+                </span>
+                <span v-else class="text-[13px] text-zinc-600 tabular-nums">{{ index + 1 }}</span>
+              </td>
+              <td class="px-4 py-3 font-semibold" :class="index === 0 ? 'text-skill' : 'text-zinc-200'">
                 {{ entry.name }}
               </td>
-              <td class="px-4 py-2.5 text-right text-zinc-200 tabular-nums">
+              <td class="px-4 py-3 text-right font-bold tabular-nums" :class="index === 0 ? 'text-skill' : 'text-zinc-200'">
                 {{ entry.score.toLocaleString() }}
               </td>
-              <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">{{ entry.wave }}</td>
-              <td class="px-4 py-2.5 text-right text-zinc-500 tabular-nums">{{ entry.kills ?? '—' }}</td>
-              <td class="px-4 py-2.5 text-right text-zinc-500 tabular-nums">{{ fmtTime(entry.timeSec) }}</td>
-              <td class="px-4 py-2.5 text-right text-[13px] text-zinc-600">{{ entry.date }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">{{ entry.wave }}</td>
+              <td class="hidden px-4 py-3 text-right text-zinc-600 tabular-nums sm:table-cell">{{ fmtTime(entry.timeSec) }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </template>
 
-    <!-- Global -->
+    <!-- Global board -->
     <template v-else>
-      <div v-if="!cloud" class="px-4 py-8 text-center text-[13px] text-zinc-600">
-        Log in to see worldwide scores.
+      <div v-if="!cloud" class="px-4 py-10 text-center">
+        <div class="mb-2 text-3xl">🌐</div>
+        <p class="text-[13px] text-zinc-600">Log in to see worldwide scores.</p>
       </div>
-      <div v-else-if="loading" class="px-4 py-8 text-center text-[13px] text-zinc-500">
+      <div v-else-if="loading" class="flex items-center justify-center gap-2 px-4 py-10 text-[13px] text-zinc-500">
+        <svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
         Loading global board…
       </div>
-      <div v-else-if="error" class="px-4 py-8 text-center text-[13px] text-danger">
-        {{ error }}
-      </div>
-      <div v-else-if="!global.length" class="px-4 py-8 text-center text-[13px] text-zinc-600">
-        No global scores yet — be the first.
+      <div v-else-if="error" class="px-4 py-10 text-center text-[13px] text-danger">{{ error }}</div>
+      <div v-else-if="!global.length" class="px-4 py-10 text-center">
+        <div class="mb-2 text-3xl">🌐</div>
+        <p class="text-[13px] text-zinc-600">No global scores yet — be the first.</p>
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
-            <tr class="border-b border-white/5">
-              <th class="label px-4 py-2 font-medium">Rank</th>
-              <th class="label px-4 py-2 font-medium">Pilot</th>
-              <th class="label px-4 py-2 text-right font-medium">Score</th>
-              <th class="label px-4 py-2 text-right font-medium">Wave</th>
-              <th class="label px-4 py-2 text-right font-medium">Kills</th>
+            <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+              <th class="label px-4 py-3">#</th>
+              <th class="label px-4 py-3">Pilot</th>
+              <th class="label px-4 py-3 text-right">Score</th>
+              <th class="label px-4 py-3 text-right">Wave</th>
             </tr>
           </thead>
           <tbody>
             <tr
               v-for="(entry, index) in global"
               :key="`${entry.uid ?? entry.name}-${entry.ts}-${index}`"
-              class="border-b border-white/5 last:border-0"
+              class="transition-colors"
+              style="border-bottom: 1px solid rgba(255,255,255,0.04);"
+              :style="index === 0 ? 'background: rgba(251,191,36,0.03);' : ''"
             >
-              <td class="px-4 py-2.5 text-zinc-500 tabular-nums">{{ index + 1 }}</td>
-              <td class="px-4 py-2.5 font-medium" :class="index === 0 ? 'text-skill' : 'text-zinc-200'">
+              <td class="px-4 py-3">
+                <span v-if="index < 3"
+                  class="rank-badge text-sm"
+                  :style="`background: ${RANK_STYLES[index].bg}; color: ${RANK_STYLES[index].color};`"
+                >
+                  {{ RANK_STYLES[index].label }}
+                </span>
+                <span v-else class="text-[13px] text-zinc-600 tabular-nums">{{ index + 1 }}</span>
+              </td>
+              <td class="px-4 py-3 font-semibold" :class="index === 0 ? 'text-skill' : 'text-zinc-200'">
                 {{ entry.name }}
               </td>
-              <td class="px-4 py-2.5 text-right text-zinc-200 tabular-nums">
+              <td class="px-4 py-3 text-right font-bold tabular-nums" :class="index === 0 ? 'text-skill' : 'text-zinc-200'">
                 {{ entry.score.toLocaleString() }}
               </td>
-              <td class="px-4 py-2.5 text-right text-zinc-400 tabular-nums">{{ entry.wave }}</td>
-              <td class="px-4 py-2.5 text-right text-zinc-500 tabular-nums">{{ entry.kills ?? '—' }}</td>
+              <td class="px-4 py-3 text-right text-zinc-400 tabular-nums">{{ entry.wave }}</td>
             </tr>
           </tbody>
         </table>
