@@ -36,6 +36,44 @@ function onStickEnd(e) {
     emit('move', 0, 0);
   }
 }
+
+// Right virtual stick: aim + auto-fire. Touching it down starts firing
+// (toward wherever it's aimed, keeping the last heading if untouched);
+// dragging steers the aim while held; lifting stops firing.
+const aimStick = ref({ x: 0, y: 0 });
+const aimActive = ref(false);
+let aimId = null;
+let aimOrigin = null;
+
+function onAimStart(e) {
+  const t = e.changedTouches[0];
+  aimId = t.identifier;
+  aimOrigin = { x: t.clientX, y: t.clientY };
+  aimActive.value = true;
+  emit('fire', true);
+  e.preventDefault();
+}
+function onAimMove(e) {
+  if (!aimActive.value) return;
+  for (const t of e.changedTouches) {
+    if (t.identifier !== aimId) continue;
+    const dx = (t.clientX - aimOrigin.x) / 48;
+    const dy = (t.clientY - aimOrigin.y) / 48;
+    const len = Math.hypot(dx, dy) || 1;
+    const cl = Math.min(1, len);
+    aimStick.value = { x: (dx / len) * cl, y: (dy / len) * cl };
+    emit('aim-fire', dx, dy);
+    e.preventDefault();
+  }
+}
+function onAimEnd(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier !== aimId) continue;
+    aimActive.value = false;
+    aimStick.value = { x: 0, y: 0 };
+    emit('fire', false);
+  }
+}
 </script>
 
 <template>
@@ -78,13 +116,25 @@ function onStickEnd(e) {
       >
         DSH
       </button>
-      <button
-        class="h-16 w-16 rounded-full bg-accent text-[12px] font-bold text-ink"
-        @touchstart.prevent="emit('fire', true)"
-        @touchend.prevent="emit('fire', false)"
+
+      <!-- Right virtual stick: aim + fire -->
+      <div
+        class="relative h-28 w-28 rounded-full border backdrop-blur-sm transition-colors"
+        :class="aimActive ? 'border-accent/50 bg-accent/10' : 'border-white/15 bg-white/5'"
+        @touchstart="onAimStart"
+        @touchmove="onAimMove"
+        @touchend="onAimEnd"
+        @touchcancel="onAimEnd"
       >
-        FIRE
-      </button>
+        <div
+          class="absolute h-12 w-12 rounded-full"
+          :class="aimActive ? 'bg-accent/40' : 'bg-white/20'"
+          :style="{
+            left: `calc(50% - 24px + ${aimStick.x * 32}px)`,
+            top: `calc(50% - 24px + ${aimStick.y * 32}px)`,
+          }"
+        />
+      </div>
     </div>
   </div>
 </template>

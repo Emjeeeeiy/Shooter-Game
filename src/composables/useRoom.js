@@ -253,7 +253,7 @@ export async function backToRoomLobby(code) {
   await timed(updateDoc(roomRef(code), { status: 'lobby', live: {} }));
 }
 
-export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, ship, fx, kills }) {
+export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, ship, firing, fx, kills }) {
   const fields = {
     [`live.${uid}.score`]: Math.floor(Number(score) || 0),
     [`live.${uid}.wave`]: Math.floor(Number(wave) || 1),
@@ -264,6 +264,7 @@ export async function updateLiveScore(code, uid, { score, wave, name, x, y, a, s
   if (Number.isFinite(y)) fields[`live.${uid}.y`] = Math.round(y);
   if (Number.isFinite(a)) fields[`live.${uid}.a`] = Math.round(a * 100) / 100;
   if (ship) fields[`live.${uid}.ship`] = String(ship).slice(0, 20);
+  fields[`live.${uid}.firing`] = !!firing;
   // Latest skill/ultimate echo {k, s, a} — receivers dedupe by sequence.
   if (fx && Number.isInteger(fx.s)) {
     fields[`live.${uid}.fx`] = {

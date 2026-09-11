@@ -55,6 +55,7 @@ const {
   onPointerDown,
   setTouchMove,
   setTouchAim,
+  setTouchAimVector,
 } = useGame(settings);
 
 const { save, isBest } = useLeaderboard();
@@ -73,23 +74,20 @@ function onSave() {
 }
 
 // --- multiplayer race: live score broadcast + final submit ------------------
+// One heartbeat drives every live field (position, angle, fx, firing, score,
+// kills) so rival ghosts move smoothly and skill/basic-attack echoes land
+// within one tick of happening, instead of waiting on the old score-only
+// throttle. 450ms keeps it well short of Firestore's per-write cost mattering
+// for a small squad while giving client-side dead reckoning enough samples
+// to extrapolate smooth motion between them.
+const LIVE_INTERVAL_MS = 450;
 let finishSent = false;
-let lastLiveSent = 0;
-let lastSentScore = -1;
-let lastSentWave = -1;
-let lastSentX = null;
-let lastSentY = null;
 let lastFxSent = -1;
-let fxTimer = null;
+let liveTimer = null;
 let seenEids = new Set();
 
-function flushFx() {
-  if (!props.race || !hud.running || hud.gameOver) return;
-  const fx = getFx();
-  const freshFx = fx && Number.isInteger(fx.s) && fx.s !== lastFxSent;
-  // Shared-swarm kills ride the same 1s tick so mates drop their copy fast.
-  const ko = drainKills();
-  if (!freshFx && !ko.length) return;
+function flushLive() {
+  if (!props.race || !hud.running || hud.paused || hud.gameOver) return;
   const self = getSelf();
   const payload = {
     score: hud.score,
@@ -97,10 +95,13 @@ function flushFx() {
     name: props.race.name,
     ...self,
   };
-  if (freshFx) {
+  const fx = getFx();
+  if (fx && Number.isInteger(fx.s) && fx.s !== lastFxSent) {
     payload.fx = { k: fx.k, s: fx.s, a: fx.a };
     lastFxSent = fx.s;
   }
+  // Shared-swarm kills ride the same tick so mates drop their copy fast.
+  const ko = drainKills();
   if (ko.length) {
     payload.kills = {};
     const now = Date.now();
@@ -114,11 +115,6 @@ watch(
   (running) => {
     if (running) {
       finishSent = false;
-      lastLiveSent = 0;
-      lastSentScore = -1;
-      lastSentWave = -1;
-      lastSentX = null;
-      lastSentY = null;
       lastFxSent = -1;
       seenEids = new Set();
       // Adopt a room-wide pause hold on (re)start so late joiners freeze too.
@@ -134,45 +130,11 @@ watch(
           setRoomPause(props.race.code, null).catch(() => {});
         }
       }
-      if (!fxTimer) fxTimer = setInterval(flushFx, 1000);
-    } else if (fxTimer) {
-      clearInterval(fxTimer);
-      fxTimer = null;
+      if (!liveTimer) liveTimer = setInterval(flushLive, LIVE_INTERVAL_MS);
+    } else if (liveTimer) {
+      clearInterval(liveTimer);
+      liveTimer = null;
     }
-  },
-);
-
-watch(
-  () => hud.score,
-  (score) => {
-    if (!props.race || !hud.running || hud.gameOver) return;
-    const now = Date.now();
-    if (now - lastLiveSent < 3000) return;
-    const self = getSelf();
-    // Firestore bills per write — broadcast at most every 3s, and only when
-    // the score changed or the ship actually moved (>40px). Positions ride
-    // the same write so rival ghosts cost nothing extra.
-    const moved =
-      lastSentX == null ||
-      Math.hypot((self.x ?? 0) - lastSentX, (self.y ?? 0) - lastSentY) > 40;
-    if (score === lastSentScore && hud.wave === lastSentWave && !moved) return;
-    lastLiveSent = now;
-    lastSentScore = score;
-    lastSentWave = hud.wave;
-    lastSentX = self.x ?? null;
-    lastSentY = self.y ?? null;
-    const payload = {
-      score,
-      wave: hud.wave,
-      name: props.race.name,
-      ...self,
-    };
-    const fx = getFx();
-    if (fx && Number.isInteger(fx.s) && fx.s !== lastFxSent) {
-      payload.fx = { k: fx.k, s: fx.s, a: fx.a };
-      lastFxSent = fx.s;
-    }
-    updateLiveScore(props.race.code, props.race.uid, payload).catch(() => {});
   },
 );
 
@@ -282,7 +244,7 @@ watch(
       }
       if (s?.done) continue;
       if (!Number.isFinite(s?.x) || !Number.isFinite(s?.y)) continue;
-      ghosts.push({ uid: id, x: s.x, y: s.y, a: s.a, name: s.name, ship: s.ship, fx: s.fx });
+      ghosts.push({ uid: id, x: s.x, y: s.y, a: s.a, name: s.name, ship: s.ship, fx: s.fx, firing: s.firing });
     }
     setRivals(ghosts);
   },
@@ -442,9 +404,9 @@ onBeforeUnmount(() => {
     clearInterval(syncClock);
     syncClock = null;
   }
-  if (fxTimer) {
-    clearInterval(fxTimer);
-    fxTimer = null;
+  if (liveTimer) {
+    clearInterval(liveTimer);
+    liveTimer = null;
   }
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
   window.removeEventListener('resize', checkOrientation);
@@ -542,6 +504,7 @@ const shakeClass = computed(() => {
       <TouchControls
         v-if="isTouch && hud.running && !hud.paused && !hud.gameOver"
         @move="(x, y) => setTouchMove(x, y)"
+        @aim-fire="(dx, dy) => setTouchAimVector(dx, dy)"
         @fire="(held) => setFire(held)"
         @dash="doDash"
         @missiles="doMissiles"

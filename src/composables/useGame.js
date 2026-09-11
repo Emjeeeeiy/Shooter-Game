@@ -302,6 +302,7 @@ export function useGame(settings) {
       y: g.player.y,
       a: g.player.angle,
       ship: g.characterId ?? 'vanguard',
+      firing: !!g.fireHeld,
     };
   };
   const setRivals = (list) => game.value?.setRivals(list);
@@ -391,5 +392,6 @@ export function useGame(settings) {
     onPointerDown,
     setTouchMove,
     setTouchAim,
+    setTouchAimVector,
   };
 }

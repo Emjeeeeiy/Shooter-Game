@@ -131,7 +131,10 @@ onBeforeUnmount(() => {
 
 const othersOnline = computed(() => {
   const memberIds = new Set(members.value.map((m) => m.id));
-  return presence.online.value.filter((p) => p.uid !== props.uid && !memberIds.has(p.uid));
+  // Friends already appear in the "Friends — invite" list above; skip them here.
+  return presence.online.value.filter(
+    (p) => p.uid !== props.uid && !memberIds.has(p.uid) && !friendUids.value.has(p.uid),
+  );
 });
 
 async function invite(p) {

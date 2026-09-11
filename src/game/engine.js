@@ -41,6 +41,11 @@ const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const GRID_CELL = 90;
 const cellKey = (x, y) => `${Math.floor(x / GRID_CELL)},${Math.floor(y / GRID_CELL)}`;
 
+// Dead-reckoning cap for rival ghosts (world units/sec) — generous enough to
+// cover a dash burst between broadcast samples without a noisy sample (e.g.
+// two snapshot updates landing back-to-back) flinging the ghost off-map.
+const RIVAL_MAX_SPEED = 1200;
+
 // Shared warp gates: fixed battlefield portals so every room mate on the same
 // seed sees identical spawn positions — one map, same enemies, like the
 // background animation. Solo/versus keep player-relative ambush spawns.
@@ -343,6 +348,7 @@ export class Game {
 
   /** Replace the ghost roster; display positions glide toward targets. */
   setRivals(list) {
+    const now = Date.now();
     const next = [];
     for (const r of list ?? []) {
       if (!r || typeof r.uid !== 'string' || !Number.isFinite(r.x) || !Number.isFinite(r.y)) continue;
@@ -352,6 +358,23 @@ export class Game {
       const y = prev ? prev.y : r.y;
       const a = Number.isFinite(r.a) ? r.a : (prev?.a ?? 0);
       const lastFx = prev?.lastFx ?? -1;
+      // Dead-reckoning: only a genuinely new broadcast sample (position
+      // actually moved) re-derives velocity — a live-doc update triggered by
+      // some other rival shouldn't reset this one's timer or motion.
+      let vx = prev?.vx ?? 0;
+      let vy = prev?.vy ?? 0;
+      let sampleAt = prev?.sampleAt ?? now;
+      const moved = !prev || prev.tx !== r.x || prev.ty !== r.y;
+      if (moved && prev?.sampleAt) {
+        const dt = (now - prev.sampleAt) / 1000;
+        // Ignore back-to-back samples (<100ms apart) — too little elapsed
+        // time to derive a stable velocity, and the old one still holds.
+        if (dt > 0.1) {
+          vx = clamp((r.x - prev.tx) / dt, -RIVAL_MAX_SPEED, RIVAL_MAX_SPEED);
+          vy = clamp((r.y - prev.ty) / dt, -RIVAL_MAX_SPEED, RIVAL_MAX_SPEED);
+          sampleAt = now;
+        }
+      }
       next.push({
         uid: r.uid,
         // Snap on first sight so nobody pops in from the corner.
@@ -359,12 +382,16 @@ export class Game {
         y,
         tx: r.x,
         ty: r.y,
+        vx,
+        vy,
+        sampleAt,
         a,
         name: String(r.name ?? 'Pilot').slice(0, 20),
         ship,
         color: CHARACTERS[ship]?.color ?? '#e4e4e7',
         lastFx,
-        seenAt: Date.now(), // freshness stamp for shared aggro
+        firing: !!r.firing, // basic-attack echo: sparks while the broadcast says they're shooting
+        seenAt: now, // freshness stamp for shared aggro
       });
       // New skill/ultimate sighting on a known-or-new ghost: play it locally.
       const fx = r.fx;
@@ -422,13 +449,38 @@ export class Game {
     }
   }
 
-  /** Glide ghosts toward their latest broadcast targets (3s cadence). */
+  /**
+   * Glide ghosts toward their broadcast targets. Between (sparse) network
+   * samples, the target itself is extrapolated forward from the ghost's last
+   * known velocity — dead reckoning — so motion reads as continuous instead
+   * of freezing then snapping on every update.
+   */
   updateRivals() {
+    const now = Date.now();
     for (const g of this.rivals) {
-      g.x += (g.tx - g.x) * 0.12;
-      g.y += (g.ty - g.y) * 0.12;
-      if (Math.abs(g.tx - g.x) < 0.5) g.x = g.tx;
-      if (Math.abs(g.ty - g.y) < 0.5) g.y = g.ty;
+      const elapsed = Math.min(Math.max((now - g.sampleAt) / 1000, 0), 0.6);
+      const predX = g.tx + g.vx * elapsed;
+      const predY = g.ty + g.vy * elapsed;
+      g.x += (predX - g.x) * 0.25;
+      g.y += (predY - g.y) * 0.25;
+      if (Math.abs(predX - g.x) < 0.5) g.x = predX;
+      if (Math.abs(predY - g.y) < 0.5) g.y = predY;
+      // Basic-attack echo: light muzzle sparks so a firing teammate reads
+      // at a glance, without needing a per-bullet network sync.
+      if (g.firing && this.tick % 4 === 0 && this.particles.length < MAX_PARTICLES) {
+        const a = g.a || 0;
+        this.particles.push({
+          x: g.x + Math.cos(a) * 28,
+          y: g.y + Math.sin(a) * 28,
+          vx: Math.cos(a) * 10,
+          vy: Math.sin(a) * 10,
+          life: 10,
+          maxLife: 10,
+          color: g.color,
+          size: 2,
+          decay: 0.9,
+        });
+      }
     }
   }
 
