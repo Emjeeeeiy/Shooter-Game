@@ -19,7 +19,6 @@ import StatBar from './StatBar.vue';
 import TouchControls from './TouchControls.vue';
 import UiIcon from './UiIcon.vue';
 import { useViewport } from '../composables/useViewport.js';
-import { canFullscreen, enterLandscape, exitFullscreen } from '../composables/useOrientation.js';
 
 const props = defineProps({
   characterId: { type: String, default: 'vanguard' },
@@ -339,15 +338,7 @@ function pauseIfUpright() {
 }
 watch(() => vp.portraitPhone, pauseIfUpright);
 
-// Fullscreen hides browser chrome and, on Android, locks landscape.
-const isFullscreen = ref(false);
-function syncFullscreen() {
-  isFullscreen.value = !!document.fullscreenElement;
-}
-async function toggleFullscreen() {
-  if (document.fullscreenElement) await exitFullscreen();
-  else await enterLandscape();
-}
+// Fullscreen is automatic on phones (first tap, see useAutoFullscreen) — no button here.
 
 function syncAudio() {
   sfx.setMuted(settings.muted);
@@ -385,7 +376,6 @@ function beginRun() {
 onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
-  document.addEventListener('fullscreenchange', syncFullscreen);
   const gunDelay = (props.race?.startsAt ?? 0) - Date.now();
   if (props.race && gunDelay > 0) {
     // Synced room start: hold on the gun-time so every client ticks from
@@ -408,7 +398,6 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
-  document.removeEventListener('fullscreenchange', syncFullscreen);
   if (syncTimer) {
     clearTimeout(syncTimer);
     syncTimer = null;
@@ -506,15 +495,6 @@ const shakeClass = computed(() => {
 
         <div class="hud-top hud-right absolute flex flex-col items-end gap-1.5">
           <div class="pointer-events-auto flex gap-1.5">
-            <button
-              v-if="canFullscreen"
-              type="button"
-              class="btn-icon bg-surface/70"
-              :aria-label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-              @click="toggleFullscreen"
-            >
-              <UiIcon :name="isFullscreen ? 'minimize' : 'maximize'" cls="h-4 w-4" />
-            </button>
             <button
               v-if="hud.running && !hud.gameOver"
               type="button"

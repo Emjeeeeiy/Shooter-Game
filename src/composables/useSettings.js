@@ -13,6 +13,7 @@ const defaults = {
   touchControls: 'auto',
   controlSize: 'm', // 's' | 'm' | 'l'
   leftHanded: false, // swap move / aim sticks
+  autoFullscreen: true, // phones: first tap enters fullscreen
 };
 
 // Allowed values for prefs set through setPref().
@@ -20,6 +21,7 @@ const CHOICES = {
   touchControls: ['auto', 'on', 'off'],
   controlSize: ['s', 'm', 'l'],
   leftHanded: [true, false],
+  autoFullscreen: [true, false],
 };
 
 function read() {

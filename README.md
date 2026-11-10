@@ -59,7 +59,7 @@ invites/{uid}/items/… = { fromUid, fromName, roomCode, mode, ts }
 | **E** | Shockwave — heavy radial damage + knockback (15s) |
 | **P / Esc** | Pause / resume |
 | **M** | Mute / unmute |
-| Touch | Drag anywhere on the left to move (floating stick); right stick aims + fires (tap its centre to shoot ahead); Dash / Missiles / Ultimate buttons sit around the aim stick. Phones play in landscape (a rotate prompt covers the app while upright; Android can jump to fullscreen landscape). Stick size, left-handed layout and an on/off override live in Settings. |
+| Touch | Drag anywhere on the left to move (floating stick); right stick aims + fires (tap its centre to shoot ahead); Dash / Missiles / Ultimate buttons sit around the aim stick. Phones play in landscape and go fullscreen on your first tap (a rotate prompt covers the app while upright; Android also locks landscape; Settings → Fullscreen turns it off; iPhone Safari has no fullscreen API — use Add to Home Screen). Stick size, left-handed layout and an on/off override live in Settings. |
 
 Kills charge a combo multiplier (up to x5). Taking damage resets combo.
 Special enemies drop buffs / pickups:
@@ -85,7 +85,7 @@ src/
     useLeaderboard.js # localStorage top-10 with validation
     useSettings.js    # volume/shake/fps/mute/theme/touch persisted settings
     useViewport.js    # reactive viewport tiers (compact / short / portrait / touch)
-    useOrientation.js # fullscreen + landscape lock (Android)
+    useOrientation.js # first-tap fullscreen + landscape lock (Android)
     useAuth.js        # Firebase email/password auth + offline mode
     useCloudBoard.js  # global top-10 scores in RTDB
     useRoom.js        # multiplayer race rooms in RTDB

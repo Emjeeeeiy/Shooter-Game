@@ -23,6 +23,7 @@ import { useLeaderboard } from './composables/useLeaderboard.js';
 import { useProfile } from './composables/useProfile.js';
 import { useSettings } from './composables/useSettings.js';
 import { useViewport } from './composables/useViewport.js';
+import { enterLandscape, exitFullscreen, useAutoFullscreen } from './composables/useOrientation.js';
 import { useCloudBoard } from './composables/useCloudBoard.js';
 import { getRoom, joinRoom, leaveRoom, submitFinal } from './composables/useRoom.js';
 import { sendInviteReply, useInviteReplies, useInvites, usePresence } from './composables/usePresence.js';
@@ -129,6 +130,14 @@ const OVERLAY_META = {
   settings: { eyebrow: 'Configuration', title: 'Settings' },
 };
 const overlayMeta = computed(() => OVERLAY_META[overlay.value] ?? { eyebrow: '', title: '' });
+
+// Settings switches; the fullscreen one also acts at once (the tap is a valid gesture).
+function onSetPref(key, value) {
+  setPref(key, value);
+  if (key !== 'autoFullscreen') return;
+  if (value) enterLandscape();
+  else exitFullscreen();
+}
 
 function openOverlay(name) {
   overlay.value = overlay.value === name ? null : name;
@@ -329,6 +338,8 @@ onMounted(() => {
   syncMusic();
   window.addEventListener('pointerdown', music.unlock, { once: true });
   window.addEventListener('keydown', music.unlock, { once: true });
+  // Phones: the first tap on any screen enters fullscreen (browsers need a gesture).
+  useAutoFullscreen(() => settings.autoFullscreen && vp.coarse && vp.compact);
   // Sheets close themselves on Escape; this only handles the notification panel.
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && showNotifs.value) showNotifs.value = false;
@@ -652,7 +663,7 @@ async function onRunSaved({ score, wave, stats }) {
             @toggle-shake="toggleShake"
             @toggle-fps="toggleFps"
             @theme="setTheme"
-            @set="setPref"
+            @set="onSetPref"
           />
         </Sheet>
       </main>

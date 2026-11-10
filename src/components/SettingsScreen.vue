@@ -1,10 +1,15 @@
 <script setup>
 import SegTabs from './ui/SegTabs.vue';
 import UiIcon from './UiIcon.vue';
+import { canFullscreen } from '../composables/useOrientation.js';
+import { useViewport } from '../composables/useViewport.js';
 
 defineProps({
   settings: { type: Object, required: true },
 });
+
+// The Fullscreen row only shows on touch devices that support the API.
+const vp = useViewport();
 
 const emit = defineEmits(['toggle-mute', 'toggle-music', 'volume', 'toggle-shake', 'toggle-fps', 'theme', 'set']);
 
@@ -93,6 +98,21 @@ const SIZES = [
             @update:model-value="emit('theme', $event)"
           />
         </div>
+
+        <button
+          v-if="canFullscreen && vp.coarse"
+          type="button"
+          role="switch"
+          :aria-checked="settings.autoFullscreen"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          @click="emit('set', 'autoFullscreen', !settings.autoFullscreen)"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">Fullscreen</span>
+            <span class="block text-xs text-zinc-500">Hide the browser bars (turns on with your first tap)</span>
+          </span>
+          <span class="switch-track-themed" :data-on="settings.autoFullscreen" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
 
         <button
           type="button"
