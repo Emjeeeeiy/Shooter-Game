@@ -1,5 +1,6 @@
-  <script setup>
+<script setup>
 import { computed, ref, watch } from 'vue';
+import UiIcon from './UiIcon.vue';
 
 const props = defineProps({
   score: { type: Number, required: true },
@@ -19,6 +20,12 @@ const kills = computed(() => props.stats?.kills ?? 0);
 const timeSec = computed(() => props.stats?.timeSec ?? 0);
 const maxMult = computed(() => props.stats?.maxMultiplier ?? 1);
 const accountName = computed(() => (props.pilotName || 'Pilot').slice(0, 20));
+const summary = computed(() => [
+  { label: 'Kills', value: kills.value },
+  { label: 'Time', value: fmtTime(timeSec.value) },
+  { label: 'Acc', value: `${accuracy.value}%` },
+  { label: 'Combo', value: `x${maxMult.value}`, tone: 'text-skill' },
+]);
 
 // Reset for the next run (overlay remounts on retry, but guard re-use too).
 watch([() => props.score, () => props.wave], () => {
@@ -39,101 +46,79 @@ function save() {
 </script>
 
 <template>
-  <div class="absolute inset-0 z-30 flex items-center justify-center overflow-y-auto bg-surface/70 backdrop-blur-md">
-    <div class="panel-elevated my-4 w-full max-w-sm p-6 sm:p-7">
-      <!-- Header: CRITICAL FAILURE -->
-      <div class="flex items-center gap-2">
-        <span class="h-1.5 w-1.5 rounded-full bg-danger" style="box-shadow: 0 0 6px rgba(251,113,133,0.8);" />
-        <span class="font-ui text-[10px] font-semibold tracking-[0.22em] text-danger uppercase">Critical Failure</span>
-        <span
-          v-if="isBest && score > 0"
-          class="font-ui ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold tracking-widest text-skill uppercase"
-          style="background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.25);"
-        >
-          ★ New Best
-        </span>
-      </div>
+  <div class="scroll-area absolute inset-0 z-30 bg-surface/75 backdrop-blur-md pointer-coarse:backdrop-blur-none">
+    <div class="px-safe flex min-h-full items-center justify-center py-[max(1rem,var(--sat))]">
+      <div
+        class="panel-elevated grid w-full max-w-sm gap-5 p-5 short:max-w-2xl short:grid-cols-2 short:gap-5 short:p-4 roomy:p-7"
+        role="dialog"
+        aria-label="Game over"
+      >
+        <!-- Result -->
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="h-1.5 w-1.5 rounded-full bg-danger" />
+            <span class="font-ui text-[11px] font-semibold tracking-[0.22em] text-danger uppercase">Critical failure</span>
+            <span
+              v-if="isBest && score > 0"
+              class="font-ui ml-auto inline-flex items-center gap-1 rounded-full border border-skill/25 bg-skill/15 px-2 py-0.5 text-[11px] font-bold tracking-widest text-skill uppercase"
+            >
+              <UiIcon name="star" cls="h-3 w-3" /> New best
+            </span>
+          </div>
 
-      <!-- GAME OVER heading -->
-      <div class="mt-4">
-        <div class="font-ui label">Final Score</div>
-        <div
-          class="font-display mt-1 text-5xl font-bold text-zinc-50 tabular-nums"
-          style="letter-spacing: 0.04em;"
-        >
-          {{ props.score.toLocaleString() }}
-        </div>
-        <div class="font-ui mt-1.5 text-sm font-medium text-zinc-500">
-          Reached wave <span class="font-bold text-zinc-300 tabular-nums">{{ props.wave }}</span>
-        </div>
-      </div>
+          <div class="mt-3">
+            <div class="label">Final score</div>
+            <div class="font-display mt-1 truncate text-4xl font-bold text-zinc-50 tabular-nums short:text-3xl roomy:text-5xl">
+              {{ props.score.toLocaleString() }}
+            </div>
+            <div class="font-ui mt-1 text-sm font-medium text-zinc-500">
+              Reached wave <span class="font-bold text-zinc-300 tabular-nums">{{ props.wave }}</span>
+            </div>
+          </div>
 
-      <!-- Stats row -->
-      <div class="mt-5 grid grid-cols-4 gap-2 text-center">
-        <div class="panel px-2 py-2.5">
-          <div class="label text-[8px]">Kills</div>
-          <div class="font-display mt-1 text-sm font-bold text-zinc-100 tabular-nums" style="letter-spacing: 0.02em;">{{ kills }}</div>
+          <div class="mt-4 grid grid-cols-4 gap-1.5 text-center">
+            <div v-for="s in summary" :key="s.label" class="tile px-1 py-2">
+              <div class="label text-[10px]">{{ s.label }}</div>
+              <div class="font-display mt-1 text-sm font-bold tabular-nums" :class="s.tone ?? 'text-zinc-100'">{{ s.value }}</div>
+            </div>
+          </div>
         </div>
-        <div class="panel px-2 py-2.5">
-          <div class="label text-[8px]">Time</div>
-          <div class="font-display mt-1 text-sm font-bold text-zinc-100 tabular-nums" style="letter-spacing: 0.02em;">{{ fmtTime(timeSec) }}</div>
-        </div>
-        <div class="panel px-2 py-2.5">
-          <div class="label text-[8px]">Acc</div>
-          <div class="font-display mt-1 text-sm font-bold text-zinc-100 tabular-nums" style="letter-spacing: 0.02em;">{{ accuracy }}%</div>
-        </div>
-        <div class="panel px-2 py-2.5">
-          <div class="label text-[8px]">Combo</div>
-          <div class="font-display mt-1 text-sm font-bold text-skill tabular-nums" style="letter-spacing: 0.02em;">x{{ maxMult }}</div>
-        </div>
-      </div>
 
-      <!-- Save form -->
-      <form class="mt-6 space-y-2.5" @submit.prevent="save">
-        <div class="flex items-center justify-between rounded-xl border border-white/8 bg-white/4 px-3.5 py-2.5">
-          <span class="label text-[9px]">Pilot</span>
-          <span class="font-ui max-w-[60%] truncate text-sm font-semibold text-zinc-100">{{ accountName }}</span>
-        </div>
-        <p class="font-ui text-[11px] font-medium text-zinc-600">
-          Score saves to <span class="text-zinc-400">{{ accountName }}</span> — one entry per account, best score kept.
-        </p>
+        <!-- Actions -->
+        <form class="flex min-w-0 flex-col gap-2 short:justify-center" @submit.prevent="save">
+          <div class="flex items-center justify-between gap-3 rounded-xl border border-white/8 bg-white/4 px-3.5 py-2">
+            <span class="label">Pilot</span>
+            <span class="font-ui truncate text-sm font-semibold text-zinc-100">{{ accountName }}</span>
+          </div>
+          <p class="text-xs text-zinc-500 short:hidden">One entry per account — your best score is kept.</p>
 
-        <div class="flex gap-2 pt-1.5">
+          <div class="flex gap-2">
+            <button
+              type="submit"
+              :disabled="saved"
+              class="font-ui flex-1 font-bold tracking-wider"
+              :class="saved ? 'btn border border-white/10 text-zinc-500 disabled:opacity-100' : 'btn-primary'"
+            >
+              <UiIcon :name="saved ? 'check' : 'download'" cls="h-4 w-4" />
+              {{ saved ? 'Saved' : 'Save score' }}
+            </button>
+            <button type="button" class="btn-ghost font-ui flex-1 font-bold tracking-wider" @click="$emit('restart')">
+              <UiIcon name="refresh" cls="h-4 w-4" /> Retry
+            </button>
+          </div>
           <button
-            type="submit"
-            :disabled="saved"
-            class="font-ui flex-1 rounded-xl py-2.5 text-sm font-bold tracking-wider transition-all"
-            :class="saved
-              ? 'cursor-default bg-white/6 text-zinc-500'
-              : 'bg-accent text-ink hover:brightness-110 active:scale-95'"
-          >
-            {{ saved ? '✓ Saved' : 'Save Score' }}
-          </button>
-          <button
+            v-if="race"
             type="button"
-            class="btn-ghost font-ui flex-1 py-2.5 text-sm font-bold tracking-wider"
-            @click="$emit('restart')"
+            class="btn font-ui w-full border border-skill/25 bg-skill/10 font-bold tracking-wider text-skill hover:bg-skill/20"
+            @click="$emit('standings')"
           >
-            Retry
+            <UiIcon name="trophy" cls="h-4 w-4" /> Room standings
           </button>
-        </div>
-        <button
-          v-if="race"
-          type="button"
-          class="font-ui mt-2 w-full rounded-xl py-2.5 text-sm font-bold tracking-wider text-skill transition-colors hover:bg-skill/20"
-          style="background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.2);"
-          @click="$emit('standings')"
-        >
-          Room Standings
-        </button>
-        <button
-          type="button"
-          class="font-ui mt-2 w-full rounded-xl border border-white/10 px-4 py-2 text-[13px] font-semibold text-zinc-400 transition-colors hover:border-white/25 hover:text-zinc-200"
-          @click="$emit('lobby')"
-        >
-          ← Change Ship
-        </button>
-      </form>
+          <button type="button" class="btn-ghost w-full text-zinc-400" @click="$emit('lobby')">
+            <UiIcon name="chevron-left" cls="h-4 w-4" /> Change ship
+          </button>
+        </form>
+      </div>
     </div>
   </div>
 </template>

@@ -1,8 +1,13 @@
 <script setup>
+// Template: The document never scrolls: header → page → (phone) tab bar, all inside one viewport.
 import { computed, onMounted, ref, watch } from 'vue';
 import GameStage from './components/GameStage.vue';
 import BattleBackground from './components/BattleBackground.vue';
-import UiIcon from './components/UiIcon.vue';
+import AppHeader from './components/AppHeader.vue';
+import RotateGate from './components/RotateGate.vue';
+import NotificationLayer from './components/NotificationLayer.vue';
+import Leaderboard from './components/Leaderboard.vue';
+import Sheet from './components/ui/Sheet.vue';
 import Lobby from './components/Lobby.vue';
 import AuthScreen from './components/AuthScreen.vue';
 import MainMenu from './components/MainMenu.vue';
@@ -17,6 +22,7 @@ import { useFriendList, useFriendRequests } from './composables/useFriends.js';
 import { useLeaderboard } from './composables/useLeaderboard.js';
 import { useProfile } from './composables/useProfile.js';
 import { useSettings } from './composables/useSettings.js';
+import { useViewport } from './composables/useViewport.js';
 import { useCloudBoard } from './composables/useCloudBoard.js';
 import { getRoom, joinRoom, leaveRoom, submitFinal } from './composables/useRoom.js';
 import { sendInviteReply, useInviteReplies, useInvites, usePresence } from './composables/usePresence.js';
@@ -37,7 +43,7 @@ const best = ref(0);
 
 const { user, authReady, offline, logout, rename, backOnline } = useAuth();
 const { photo: profilePhoto, load: loadProfile, saveName: saveProfileName, recordGame, resetProfile } = useProfile();
-const { settings, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme } = useSettings();
+const { settings, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme, setPref } = useSettings();
 const { submitScore, personalBest } = useCloudBoard();
 
 // --- online presence + invites + friend requests ------------------------------
@@ -110,9 +116,19 @@ function goNotif(n) {
   showNotifs.value = false;
 }
 
-// Modal overlays (profile / friends / settings) float above the current
-// page — closing one returns to exactly where you were (even mid-room).
+// Secondary pages (ranks / profile / friends / settings) open in a Sheet over
+// the current page — closing one returns to exactly where you were (even
+// mid-room). Full screen on phones, a dialog on bigger screens.
 const overlay = ref(null);
+const vp = useViewport();
+const authed = computed(() => authReady.value && (!!user.value || offline.value));
+const OVERLAY_META = {
+  ranks: { eyebrow: 'Leaderboard', title: 'Top Pilots' },
+  profile: { eyebrow: 'Pilot', title: 'Profile' },
+  friends: { eyebrow: 'Squadron', title: 'Friends' },
+  settings: { eyebrow: 'Configuration', title: 'Settings' },
+};
+const overlayMeta = computed(() => OVERLAY_META[overlay.value] ?? { eyebrow: '', title: '' });
 
 function openOverlay(name) {
   overlay.value = overlay.value === name ? null : name;
@@ -313,10 +329,9 @@ onMounted(() => {
   syncMusic();
   window.addEventListener('pointerdown', music.unlock, { once: true });
   window.addEventListener('keydown', music.unlock, { once: true });
+  // Sheets close themselves on Escape; this only handles the notification panel.
   window.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (showNotifs.value) showNotifs.value = false;
-    else if (overlay.value) closeOverlay();
+    if (e.key === 'Escape' && showNotifs.value) showNotifs.value = false;
   });
 });
 
@@ -334,6 +349,12 @@ watch(
   },
   { immediate: true },
 );
+
+// Changing screens closes any open sheet (tab pages belong to the hub).
+watch(screen, () => {
+  overlay.value = null;
+  showNotifs.value = false;
+});
 
 function onAuthed() {
   screen.value = 'menu';
@@ -505,351 +526,156 @@ async function onRunSaved({ score, wave, stats }) {
 </script>
 
 <template>
-  <div :class="screen === 'arena' ? 'h-dvh w-full overflow-hidden' : 'min-h-dvh w-full'">
-    <BattleBackground v-if="screen !== 'arena'" />
+  <div class="relative flex h-dvh w-full flex-col overflow-hidden">
+    <BattleBackground v-if="screen !== 'arena'" :paused="!!overlay || vp.portraitPhone" />
 
-    <!-- ─── Global Topbar ──────────────────────────────────────────────── -->
-    <header
+    <AppHeader
       v-if="screen !== 'arena'"
-      class="sticky top-0 z-40 w-full border-b border-white/10 bg-panel/85 backdrop-blur-xl"
-    >
-      <div class="mx-auto flex max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
-        <!-- Left: Logo -->
-        <div class="flex items-center gap-3">
-          <div class="flex items-center gap-2.5">
-            <div class="flex h-7 w-7 items-center justify-center rounded-lg" style="background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.25);">
-              <span class="h-2 w-2 rounded-full bg-accent" style="box-shadow: 0 0 8px 2px rgba(56,189,248,0.6);" />
-            </div>
-            <h1 class="font-display text-sm font-bold tracking-[0.25em] text-zinc-100 uppercase">
-              Neon Strike
-            </h1>
+      :theme="settings.theme"
+      :authed="authed"
+      :can-cloud="canCloud"
+      :bell-count="bellCount"
+      :friend-pending="friendPending"
+      :show-notifs="showNotifs"
+      :overlay="overlay"
+      :photo="profilePhoto"
+      :pilot-name="pilotName"
+      :show-name="!!user && !offline"
+      :compact="vp.compact"
+      @theme="setTheme"
+      @bell="toggleNotifs"
+      @open="openOverlay"
+    />
+
+    <div class="relative z-10 flex min-h-0 flex-1 flex-col">
+      <main class="relative flex min-h-0 min-w-0 flex-1 flex-col">
+        <Transition name="screen" mode="out-in">
+          <div v-if="!authReady" key="loading" class="flex h-full items-center justify-center text-[13px] text-zinc-500">
+            Contacting command…
           </div>
-          <span class="hidden text-[11px] text-zinc-600 sm:block">Top-down arena shooter</span>
-        </div>
 
-        <!-- Right: Action Icons -->
-        <div class="flex items-center gap-1.5">
-          <!-- Theme toggle -->
-          <button
-            type="button"
-            :title="settings.theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'"
-            :aria-label="settings.theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'"
-            class="btn-icon"
-            @click="setTheme(settings.theme === 'light' ? 'dark' : 'light')"
-          >
-            <UiIcon :name="settings.theme === 'light' ? 'sun' : 'moon'" cls="h-4 w-4" />
-          </button>
+          <AuthScreen v-else-if="screen === 'auth'" key="auth" @authed="onAuthed" />
 
-          <!-- Notifications bell -->
-          <button
-            v-if="authReady && (user || offline)"
-            id="notif-btn"
-            type="button"
-            title="Notifications"
-            aria-label="Notifications"
-            class="relative btn-icon"
-            :class="showNotifs ? 'btn-icon-active' : ''"
-            @click="toggleNotifs"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-              <span
-                v-if="bellCount > 0"
-                class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[9px] font-bold tabular-nums"
-                style="color: #fff; box-shadow: 0 0 8px rgba(251,113,133,0.7);"
-              >{{ bellCount }}</span>
-          </button>
+          <MainMenu
+            v-else-if="screen === 'menu'"
+            key="menu"
+            :pilot-name="pilotName"
+            :email="user?.email ?? ''"
+            :offline="offline"
+            :best="best"
+            :cloud="canCloud"
+            :photo="profilePhoto"
+            :compact="vp.compact"
+            @single="toLobby"
+            @multi="toRooms"
+            @ranks="openOverlay('ranks')"
+            @logout="onLogout"
+          />
 
-          <!-- Friends / Search -->
-          <button
-            v-if="canCloud"
-            id="friends-btn"
-            type="button"
-            title="Search pilots & friends"
-            aria-label="Search pilots and friends"
-            class="relative btn-icon"
-            :class="overlay === 'friends' ? 'btn-icon-active' : ''"
-            @click="openOverlay('friends')"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <span
-              v-if="friendPending > 0"
-              class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-ink tabular-nums"
-              style="box-shadow: 0 0 8px rgba(56,189,248,0.7);"
-            >{{ friendPending }}</span>
-          </button>
+          <Lobby
+            v-else-if="screen === 'lobby'"
+            key="lobby"
+            :selected-id="selected"
+            :map-pick="mapPick"
+            @select="selected = $event"
+            @map-pick="mapPick = $event"
+            @launch="launchRun"
+            @back="screen = 'menu'"
+          />
 
-          <!-- Divider -->
-          <div v-if="authReady && (user || offline)" class="mx-1 h-5 w-px bg-white/10" />
+          <RoomsScreen
+            v-else-if="screen === 'rooms' && user"
+            :key="roomCode || 'gate'"
+            :uid="user.uid"
+            :pilot-name="pilotName"
+            :photo="profilePhoto"
+            :initial-ship="selected"
+            :rejoin-code="roomCode"
+            @deploy="onDeploy"
+            @back="roomCode = ''; screen = 'menu'"
+          />
 
-          <!-- Profile icon -->
-          <button
-            v-if="authReady && (user || offline)"
-            id="profile-btn"
-            type="button"
-            title="Profile"
-            aria-label="View profile"
-            class="btn-icon"
-            :class="overlay === 'profile' ? 'btn-icon-active' : ''"
-            @click="openOverlay('profile')"
-          >
-            <img
-              v-if="profilePhoto"
-              :src="profilePhoto"
-              alt=""
-              class="h-5 w-5 rounded-full object-cover"
-            />
-            <svg v-else class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
-            </svg>
-          </button>
+          <GameStage
+            v-else-if="screen === 'arena'"
+            :key="`run-${runId}`"
+            :character-id="race ? (race.ship ?? selected) : selected"
+            :pilot-name="pilotName"
+            :uid="user?.uid ?? null"
+            :map-id="runMapId"
+            :race="race"
+            @lobby="onStageLobby"
+            @room="onRoomStandings"
+            @race-finish="onRaceFinish"
+            @run-saved="onRunSaved"
+          />
+        </Transition>
 
-          <!-- Settings icon -->
-          <button
-            v-if="authReady && (user || offline)"
-            id="settings-btn"
-            type="button"
-            title="Settings"
-            aria-label="Open settings"
-            class="btn-icon"
-            :class="overlay === 'settings' ? 'btn-icon-active' : ''"
-            @click="openOverlay('settings')"
-          >
-            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-            </svg>
-          </button>
-
-          <!-- Pilot name chip (sm+) -->
-          <div
-            v-if="user && !offline"
-            class="hidden items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-[12px] font-medium text-zinc-300 sm:flex"
-          >
-            <span class="max-w-24 truncate">{{ pilotName }}</span>
-          </div>
-        </div>
-      </div>
-    </header>
-
-    <!-- ─── Main Content Area ─────────────────────────────────────────── -->
-    <div :class="screen === 'arena' ? 'relative z-10 flex h-full w-full flex-col' : 'relative z-10 mx-auto flex w-full max-w-[1600px] flex-col items-center gap-6 px-4 py-8 sm:px-6 lg:py-10 app-content'">
-
-      <!-- Invite banners (floating, top-center) -->
-      <div
-        v-if="invites.length && screen !== 'auth' && screen !== 'arena'"
-        class="fixed top-20 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 space-y-2 px-4"
-      >
-        <div
-          v-for="inv in invites"
-          :key="inv.id"
-          class="panel-elevated flex animate-slide-up items-center gap-3 p-4"
-          style="border-color: rgba(56,189,248,0.2);"
+        <!-- ─── Secondary pages: full-screen sheets on phones, dialogs elsewhere ── -->
+        <Sheet
+          :open="!!overlay && screen !== 'auth' && screen !== 'arena'"
+          :flush="overlay === 'ranks' || overlay === 'friends'"
+          :eyebrow="overlayMeta.eyebrow"
+          :title="overlayMeta.title"
+          :width="overlay === 'ranks' ? 'roomy:max-w-2xl' : 'roomy:max-w-lg'"
+          @close="closeOverlay"
         >
-          <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full" style="background: rgba(56,189,248,0.15);">
-            <svg class="h-4 w-4 text-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17" cy="21" r="1"/><circle cx="7" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-semibold text-zinc-100">{{ inv.fromName }} invited you</div>
-            <div class="text-[11px] text-zinc-500">Room {{ inv.roomCode }} · {{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}</div>
-          </div>
-          <button type="button" class="btn-primary py-1.5 px-3 text-xs" @click="acceptInvite(inv)">Join</button>
-          <button type="button" class="btn-ghost py-1.5 px-2 text-xs" @click="declineInvite(inv)">✕</button>
-        </div>
-        <p v-if="inviteError" class="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">{{ inviteError }}</p>
-      </div>
+          <Leaderboard v-if="overlay === 'ranks'" :cloud="canCloud" bare />
 
-      <!-- Toast notifications (floating, top-left) -->
-      <div
-        v-if="toastNotifs.length && screen !== 'auth'"
-        class="fixed top-20 left-4 z-50 w-full max-w-xs space-y-2"
-      >
-        <div
-          v-for="n in toastNotifs"
-          :key="n.id"
-          class="panel-elevated animate-slide-up flex items-start gap-3 border-l-2 p-4"
-          :class="n.kind === 'best' ? 'border-l-accent' : 'border-l-repair'"
-        >
-          <span
-            class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold"
-            :class="n.kind === 'best' ? 'bg-accent/15 text-accent' : 'bg-repair/15 text-repair'"
-          >{{ n.kind === 'best' ? '★' : '♥' }}</span>
-          <div class="min-w-0 flex-1">
-            <div class="truncate text-sm font-semibold text-zinc-100">{{ n.title }}</div>
-            <div class="text-[12px] text-zinc-400">{{ n.body }}</div>
-            <button v-if="n.target" type="button" class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300" @click="goNotif(n)">View →</button>
-          </div>
-          <button type="button" class="shrink-0 rounded-lg p-1 text-zinc-500 transition-colors hover:text-zinc-200" @click="dismissNotif(n.id)">✕</button>
-        </div>
-      </div>
+          <ProfileScreen
+            v-else-if="overlay === 'profile'"
+            :uid="user?.uid ?? null"
+            :pilot-name="pilotName"
+            :email="user?.email ?? ''"
+            :offline="offline"
+            :best="best"
+            :online="onlinePilots"
+            @rename="onRename"
+            @friends="overlay = 'friends'"
+            @logout="onLogout"
+          />
 
-      <!-- Notification dropdown panel -->
-      <div v-if="showNotifs && screen !== 'auth'" class="fixed top-[60px] right-4 z-50 w-full max-w-sm">
-        <div class="panel-elevated p-4" style="border-color: rgba(255,255,255,0.08);">
-          <div class="mb-3 flex items-center justify-between">
-            <span class="text-sm font-semibold text-zinc-100">Notifications</span>
-            <div class="flex items-center gap-2">
-              <button v-if="notifs.length" type="button" class="text-[11px] font-medium text-zinc-500 hover:text-zinc-200" @click="clearNotifs">Clear all</button>
-              <button type="button" aria-label="Close" class="btn-icon p-1" @click="showNotifs = false">
-                <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-          </div>
-          <div v-if="!notifs.length && !invites.length" class="py-6 text-center text-[13px] text-zinc-600">Nothing here yet.</div>
-          <div v-if="invites.length" class="mb-3 space-y-2">
-            <div class="label mb-1.5">Room invites ({{ invites.length }})</div>
-            <div v-for="inv in invites" :key="inv.id" class="flex items-center gap-2.5 rounded-xl border border-accent/20 bg-accent/5 p-3">
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-zinc-100">{{ inv.fromName }} invited you</div>
-                <div class="text-[11px] text-zinc-500">{{ inv.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }} · Room {{ inv.roomCode }}</div>
-              </div>
-              <button type="button" class="btn-primary py-1 px-3 text-xs" @click="acceptInvite(inv)">Join</button>
-              <button type="button" class="btn-ghost py-1 px-2 text-xs" @click="declineInvite(inv)">✕</button>
-            </div>
-          </div>
-          <div v-if="notifs.length" class="max-h-72 space-y-2 overflow-y-auto">
-            <div v-for="n in [...notifs].reverse()" :key="n.id" class="flex items-start gap-3 rounded-xl border border-white/6 bg-white/3 p-3">
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold"
-                :class="n.kind === 'best' ? 'bg-accent/15 text-accent' : 'bg-repair/15 text-repair'">
-                {{ n.kind === 'best' ? '★' : '♥' }}
-              </span>
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-semibold text-zinc-100">{{ n.title }}</div>
-                <div class="text-[12px] text-zinc-400">{{ n.body }}</div>
-                <button v-if="n.target" type="button" class="mt-1 text-[12px] font-semibold text-accent hover:text-sky-300" @click="goNotif(n)">View →</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+          <FriendsScreen
+            v-else-if="overlay === 'friends'"
+            :uid="user?.uid ?? null"
+            :pilot-name="pilotName"
+            :photo="profilePhoto"
+            :offline="offline"
+            :online="onlinePilots"
+          />
 
-      <!-- Friend request nudge (bottom banner) -->
-      <div
-        v-if="friendPending > 0 && screen !== 'auth' && screen !== 'arena' && overlay !== 'friends'"
-        class="fixed bottom-4 left-1/2 z-50 w-full max-w-sm -translate-x-1/2 px-4"
-      >
-        <button
-          type="button"
-          class="panel flex w-full items-center gap-3 p-3 text-left shadow-2xl transition-colors hover:border-accent/50"
-          @click="openOverlay('friends')"
-        >
-          <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-sm font-bold text-accent">{{ friendPending }}</span>
-          <span class="min-w-0 flex-1 text-sm font-semibold text-zinc-100">{{ friendPending === 1 ? '1 pilot wants to be friends' : `${friendPending} pilots want to be friends` }}</span>
-          <span class="shrink-0 text-[12px] font-semibold text-accent">View →</span>
-        </button>
-      </div>
-
-      <!-- Loading state -->
-      <div v-if="!authReady" class="py-20 text-[13px] text-zinc-500">Contacting command…</div>
-
-      <!-- ─── Screens ──────────────────────────────────────────────────── -->
-      <AuthScreen v-else-if="screen === 'auth'" @authed="onAuthed" />
-
-      <MainMenu
-        v-else-if="screen === 'menu'"
-        :pilot-name="pilotName"
-        :email="user?.email ?? ''"
-        :offline="offline"
-        :best="best"
-        :cloud="canCloud"
-        :photo="profilePhoto"
-        @single="toLobby"
-        @multi="toRooms"
-        @settings="openOverlay('settings')"
-        @profile="openOverlay('profile')"
-        @logout="onLogout"
-      />
-
-      <Lobby
-        v-if="screen === 'lobby'"
-        :selected-id="selected"
-        :map-pick="mapPick"
-        @select="selected = $event"
-        @map-pick="mapPick = $event"
-        @launch="launchRun"
-        @back="screen = 'menu'"
-      />
-
-      <RoomsScreen
-        v-else-if="screen === 'rooms' && user"
-        :key="roomCode || 'gate'"
-        :uid="user.uid"
-        :pilot-name="pilotName"
-        :photo="profilePhoto"
-        :initial-ship="selected"
-        :rejoin-code="roomCode"
-        @deploy="onDeploy"
-        @back="roomCode = ''; screen = 'menu'"
-      />
-
-      <div v-else-if="screen === 'arena'" class="h-full w-full min-w-0 flex-1">
-        <GameStage
-          :key="runId"
-          :character-id="race ? (race.ship ?? selected) : selected"
-          :pilot-name="pilotName"
-          :uid="user?.uid ?? null"
-          :map-id="runMapId"
-          :race="race"
-          @lobby="onStageLobby"
-          @room="onRoomStandings"
-          @race-finish="onRaceFinish"
-          @run-saved="onRunSaved"
-        />
-      </div>
-
-      <footer v-if="screen !== 'arena'" class="pb-2 text-center text-[11px] text-zinc-600">
-        {{ canCloud ? 'Scores sync to the global board · ' : 'Scores are stored locally in this browser · ' }}
-        <kbd>P</kbd> pause · <kbd>M</kbd> mute · touch supported
-      </footer>
+          <SettingsScreen
+            v-else-if="overlay === 'settings'"
+            :settings="settings"
+            @toggle-mute="toggleMute(); sfx.setMuted(settings.muted); music.setMuted(settings.muted)"
+            @toggle-music="toggleMusic(); music.setEnabled(settings.music)"
+            @volume="(v) => { setVolume(v); sfx.setVolume(v); music.setVolume(v); }"
+            @toggle-shake="toggleShake"
+            @toggle-fps="toggleFps"
+            @theme="setTheme"
+            @set="setPref"
+          />
+        </Sheet>
+      </main>
     </div>
 
-    <!-- ─── Modal overlays (float above the current page) ──────────────── -->
-    <div
-      v-if="overlay && screen !== 'auth' && screen !== 'arena'"
-      class="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm"
-      @click.self="closeOverlay"
-    >
-      <div class="mx-auto flex min-h-full w-full max-w-lg flex-col items-center justify-center px-4 py-8 app-modal">
-        <ProfileScreen
-          v-if="overlay === 'profile'"
-          :uid="user?.uid ?? null"
-          :pilot-name="pilotName"
-          :email="user?.email ?? ''"
-          :offline="offline"
-          :best="best"
-          :online="onlinePilots"
-          @rename="onRename"
-          @friends="overlay = 'friends'"
-          @back="closeOverlay"
-        />
+    <NotificationLayer
+      v-if="screen !== 'arena'"
+      :invites="screen !== 'auth' ? invites : []"
+      :invite-error="inviteError"
+      :toasts="screen !== 'auth' ? toastNotifs : []"
+      :notifs="notifs"
+      :show-panel="showNotifs && screen !== 'auth'"
+      :nudge-count="!vp.compact && screen !== 'auth' && overlay !== 'friends' ? friendPending : 0"
+      @accept="acceptInvite"
+      @decline="declineInvite"
+      @dismiss="dismissNotif"
+      @go="goNotif"
+      @clear="clearNotifs"
+      @close="showNotifs = false"
+      @nudge="openOverlay('friends')"
+    />
 
-        <FriendsScreen
-          v-else-if="overlay === 'friends'"
-          :uid="user?.uid ?? null"
-          :pilot-name="pilotName"
-          :photo="profilePhoto"
-          :offline="offline"
-          :online="onlinePilots"
-          @back="closeOverlay"
-        />
-
-        <SettingsScreen
-          v-else-if="overlay === 'settings'"
-          :settings="settings"
-          :pilot-name="pilotName"
-          :can-rename="canCloud"
-          @toggle-mute="toggleMute(); sfx.setMuted(settings.muted); music.setMuted(settings.muted)"
-          @toggle-music="toggleMusic(); music.setEnabled(settings.music)"
-          @volume="(v) => { setVolume(v); sfx.setVolume(v); music.setVolume(v); }"
-          @toggle-shake="toggleShake"
-          @toggle-fps="toggleFps"
-          @theme="setTheme"
-          @rename="onRename"
-          @back="closeOverlay"
-        />
-      </div>
-    </div>
+    <!-- Phones play landscape only: covers every screen while held upright. -->
+    <RotateGate v-if="vp.portraitPhone" />
   </div>
 </template>

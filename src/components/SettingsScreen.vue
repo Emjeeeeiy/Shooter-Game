@@ -1,163 +1,172 @@
 <script setup>
-import { ref } from 'vue';
+import SegTabs from './ui/SegTabs.vue';
 import UiIcon from './UiIcon.vue';
 
-const props = defineProps({
+defineProps({
   settings: { type: Object, required: true },
-  pilotName: { type: String, default: 'Pilot' },
-  canRename: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['toggle-mute', 'toggle-music', 'volume', 'toggle-shake', 'toggle-fps', 'theme', 'rename', 'back']);
+const emit = defineEmits(['toggle-mute', 'toggle-music', 'volume', 'toggle-shake', 'toggle-fps', 'theme', 'set']);
 
-const name = ref(props.pilotName);
-const renameMsg = ref('');
-
-function saveName() {
-  const clean = name.value.trim().slice(0, 20);
-  if (!clean) {
-    renameMsg.value = 'Enter a callsign.';
-    return;
-  }
-  emit('rename', clean, (msg) => {
-    renameMsg.value = msg;
-  });
-}
+const THEMES = [
+  { value: 'dark', label: 'Dark', icon: 'moon' },
+  { value: 'light', label: 'Light', icon: 'sun' },
+];
+const TOUCH = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'on', label: 'On' },
+  { value: 'off', label: 'Off' },
+];
+const SIZES = [
+  { value: 's', label: 'S' },
+  { value: 'm', label: 'M' },
+  { value: 'l', label: 'L' },
+];
 </script>
 
 <template>
-  <div class="flex w-full max-w-md flex-col items-center">
-    <div class="flex w-full justify-start">
-      <button
-        type="button"
-        class="btn-ghost gap-1.5 py-1.5 text-xs"
-        @click="emit('back')"
-      >
-        <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        Back
-      </button>
-    </div>
-    <div class="label">Configuration</div>
-    <h2 class="font-display mt-2 text-3xl font-bold text-zinc-50" style="letter-spacing: 0.08em;">SETTINGS</h2>
+  <div class="grid gap-4 short:grid-cols-2 short:gap-5">
+    <!-- Audio -->
+    <section class="min-w-0">
+      <h3 class="label mb-1.5 px-1">Audio</h3>
+      <div class="tile divide-themed overflow-hidden">
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="!settings.muted"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          @click="emit('toggle-mute')"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">Sound FX</span>
+            <span class="block text-xs text-zinc-500">In-game audio effects</span>
+          </span>
+          <span class="switch-track-themed" :data-on="!settings.muted" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
 
-    <div class="panel-elevated mt-6 w-full space-y-1 overflow-hidden p-2">
-      <!-- Callsign rename -->
-      <!-- <div v-if="canRename" class="rounded-xl p-5" style="background: rgba(255,255,255,0.02);">
-        <label class="label mb-2 block" for="settings-callsign">Pilot callsign</label>
-        <div class="flex gap-2">
-          <input
-            id="settings-callsign"
-            v-model="name"
-            type="text"
-            maxlength="20"
-            class="input-field flex-1"
-            placeholder="Your callsign"
-          />
-          <button type="button" class="btn-primary px-5" @click="saveName">Save</button>
-        </div>
-        <p v-if="renameMsg" class="mt-2 text-[12px] text-zinc-500">{{ renameMsg }}</p>
-      </div> -->
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="settings.music"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          @click="emit('toggle-music')"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">Music</span>
+            <span class="block text-xs text-zinc-500">Background soundtrack</span>
+          </span>
+          <span class="switch-track-themed" :data-on="settings.music" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
 
-      <!-- Setting rows -->
-      <div class="divide-themed divide-y">
-
-        <!-- Sound toggle -->
-        <div class="flex items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div class="font-ui text-sm font-semibold text-zinc-200">Sound FX</div>
-            <div class="font-ui text-[11px] font-medium text-zinc-600">In-game audio effects</div>
-          </div>
-          <button
-            type="button"
-            :aria-pressed="!settings.muted"
-            class="switch-track-themed"
-            :data-on="!settings.muted"
-            @click="emit('toggle-mute')"
-          >
-            <span class="switch-thumb" />
-          </button>
-        </div>
-
-        <!-- Music toggle -->
-        <div class="flex items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div class="font-ui text-sm font-semibold text-zinc-200">Music</div>
-            <div class="font-ui text-[11px] font-medium text-zinc-600">Background soundtrack</div>
-          </div>
-          <button
-            type="button"
-            :aria-pressed="settings.music"
-            class="switch-track-themed"
-            :data-on="settings.music"
-            @click="emit('toggle-music')"
-          >
-            <span class="switch-thumb" />
-          </button>
-        </div>
-
-        <!-- Volume slider -->
-        <div class="px-5 py-4">
-          <div class="mb-3 flex items-center justify-between">
-            <div>
-              <div class="font-ui text-sm font-semibold text-zinc-200">Volume</div>
-              <div class="font-ui text-[11px] font-medium text-zinc-600">Master audio level</div>
-            </div>
+        <div class="px-4 pt-3 pb-1.5">
+          <div class="flex items-center justify-between gap-4">
+            <label for="settings-volume" class="font-ui text-sm font-semibold text-zinc-200">Volume</label>
             <span class="text-[13px] font-semibold text-accent tabular-nums">{{ Math.round(settings.volume * 100) }}%</span>
           </div>
-          <div class="relative h-5 flex items-center">
-            <div class="slider-track">
-              <div
-                class="h-full rounded-full"
-                style="background: linear-gradient(90deg, #38bdf8, #0ea5e9); transition: width 0.1s;"
-                :style="{ width: settings.volume * 100 + '%' }"
-              />
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              :value="settings.volume"
-              class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              @input="emit('volume', Number($event.target.value))"
-            />
-          </div>
-        </div>
-
-        <!-- Screen shake -->
-        <div class="flex items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div class="font-ui text-sm font-semibold text-zinc-200">Screen Shake</div>
-            <div class="font-ui text-[11px] font-medium text-zinc-600">Haptic-style camera shake on hits</div>
-          </div>
-          <button
-            type="button"
-            :aria-pressed="settings.shake"
-            class="switch-track-themed"
-            :data-on="settings.shake"
-            @click="emit('toggle-shake')"
-          >
-            <span class="switch-thumb" />
-          </button>
-        </div>
-
-        <!-- FPS meter -->
-        <div class="flex items-center justify-between gap-4 px-5 py-4">
-          <div>
-            <div class="font-ui text-sm font-semibold text-zinc-200">FPS Counter</div>
-            <div class="font-ui text-[11px] font-medium text-zinc-600">Show frames per second in HUD</div>
-          </div>
-          <button
-            type="button"
-            :aria-pressed="settings.showFps"
-            class="switch-track-themed"
-            :data-on="settings.showFps"
-            @click="emit('toggle-fps')"
-          >
-            <span class="switch-thumb" />
-          </button>
+          <input
+            id="settings-volume"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            :value="settings.volume"
+            class="range"
+            :style="{ '--fill': `${settings.volume * 100}%` }"
+            @input="emit('volume', Number($event.target.value))"
+          />
         </div>
       </div>
-    </div>
+    </section>
+
+    <!-- Display -->
+    <section class="min-w-0">
+      <h3 class="label mb-1.5 px-1">Display</h3>
+      <div class="tile divide-themed overflow-hidden">
+        <div class="flex items-center justify-between gap-4 px-4 py-3">
+          <span class="font-ui text-sm font-semibold text-zinc-200">Theme</span>
+          <SegTabs
+            :model-value="settings.theme"
+            :options="THEMES"
+            label="Theme"
+            size="sm"
+            class="w-44"
+            @update:model-value="emit('theme', $event)"
+          />
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="settings.shake"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          @click="emit('toggle-shake')"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">Screen shake</span>
+            <span class="block text-xs text-zinc-500">Camera shake on hits and explosions</span>
+          </span>
+          <span class="switch-track-themed" :data-on="settings.shake" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
+
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="settings.showFps"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          @click="emit('toggle-fps')"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">FPS counter</span>
+            <span class="block text-xs text-zinc-500">Frames per second in the HUD</span>
+          </span>
+          <span class="switch-track-themed" :data-on="settings.showFps" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Touch -->
+    <section class="min-w-0 short:col-span-2">
+      <h3 class="label mb-1.5 flex items-center gap-1.5 px-1"><UiIcon name="device" cls="h-3.5 w-3.5" /> Touch controls</h3>
+      <div class="tile divide-themed overflow-hidden short:grid short:grid-cols-3 short:divide-none">
+        <div class="flex items-center justify-between gap-4 px-4 py-3 short:flex-col short:items-start short:gap-2">
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">On-screen sticks</span>
+            <span class="block text-xs text-zinc-500 short:hidden">Auto shows them on touch devices</span>
+          </span>
+          <SegTabs
+            :model-value="settings.touchControls"
+            :options="TOUCH"
+            label="On-screen sticks"
+            size="sm"
+            class="w-44"
+            @update:model-value="emit('set', 'touchControls', $event)"
+          />
+        </div>
+        <div class="flex items-center justify-between gap-4 px-4 py-3 short:flex-col short:items-start short:gap-2">
+          <span class="font-ui text-sm font-semibold text-zinc-200">Control size</span>
+          <SegTabs
+            :model-value="settings.controlSize"
+            :options="SIZES"
+            label="Control size"
+            size="sm"
+            class="w-36"
+            @update:model-value="emit('set', 'controlSize', $event)"
+          />
+        </div>
+        <button
+          type="button"
+          role="switch"
+          :aria-checked="settings.leftHanded"
+          class="flex w-full items-center justify-between gap-4 px-4 py-3 text-left short:flex-col short:items-start short:gap-2"
+          @click="emit('set', 'leftHanded', !settings.leftHanded)"
+        >
+          <span class="min-w-0">
+            <span class="font-ui block text-sm font-semibold text-zinc-200">Left-handed</span>
+            <span class="block text-xs text-zinc-500 short:hidden">Aim on the left, move on the right</span>
+          </span>
+          <span class="switch-track-themed" :data-on="settings.leftHanded" aria-hidden="true"><span class="switch-thumb" /></span>
+        </button>
+      </div>
+    </section>
   </div>
 </template>

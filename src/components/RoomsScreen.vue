@@ -1,4 +1,5 @@
 <script setup>
+// Template: ─── Gate: host or join ────────────────────────────────────────────
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { CHARACTERS, CHARACTER_LIST, MAP_PICKS } from '../game/constants.js';
 import {
@@ -27,6 +28,12 @@ import {
 import MapPreview from './MapPreview.vue';
 import ShipPreview from './ShipPreview.vue';
 import UiIcon from './UiIcon.vue';
+import Avatar from './ui/Avatar.vue';
+import InlineNotice from './ui/InlineNotice.vue';
+import PilotRow from './ui/PilotRow.vue';
+import ScreenFrame from './ui/ScreenFrame.vue';
+import SegTabs from './ui/SegTabs.vue';
+import { useViewport } from '../composables/useViewport.js';
 
 const props = defineProps({
   uid: { type: String, required: true },
@@ -47,6 +54,19 @@ const error = ref('');
 const deployed = ref(false);
 
 const { room, missing } = useRoom(code);
+const vp = useViewport();
+
+// Phones show one section at a time; roomy shows squad + a tabbed side panel.
+const tab = ref('squad'); // 'squad' | 'loadout' | 'invite'
+const sideTab = ref('loadout'); // 'loadout' | 'invite'
+const paneTab = computed(() => (vp.compact ? tab.value : sideTab.value));
+const copied = ref(false);
+const canShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+
+const MODE_TABS = [
+  { value: 'arcade', label: 'Arcade', icon: 'users' },
+  { value: 'versus', label: 'Versus', icon: 'swords' },
+];
 
 const presence = usePresence();
 const sentIds = ref(new Set());
@@ -159,6 +179,23 @@ const members = computed(() => {
 });
 
 const isHost = computed(() => room.value?.host === props.uid);
+const status = computed(() => room.value?.status ?? 'lobby');
+const modeLabel = computed(() => (room.value?.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op'));
+const statusText = computed(() => {
+  if (!room.value) return 'Connecting to room…';
+  if (status.value === 'done') return 'Match over — final standings.';
+  if (status.value === 'playing') return allDone.value ? 'Everyone finished.' : 'Match in progress.';
+  return isHost.value ? 'You are the host. Start when the squad is ready.' : 'Waiting for the host to start.';
+});
+const compactTabs = computed(() => [
+  { value: 'squad', label: status.value === 'lobby' ? `Squad (${members.value.length})` : 'Standings' },
+  { value: 'loadout', label: 'Loadout' },
+  { value: 'invite', label: 'Invite' },
+]);
+const sideTabs = [
+  { value: 'loadout', label: 'Loadout' },
+  { value: 'invite', label: 'Invite' },
+];
 const me = computed(() => members.value.find((m) => m.id === props.uid));
 
 // Adopt the room's stored ship when (re)joining so the picker stays in sync.
@@ -173,10 +210,6 @@ function shipDef(id) {
 function memberPhoto(id) {
   const m = members.value.find((x) => x.id === id);
   return m?.photo ?? '';
-}
-
-function initialOf(name) {
-  return (String(name ?? 'P').trim().charAt(0) || 'P').toUpperCase();
 }
 
 const shownMap = computed(() => {
@@ -304,440 +337,393 @@ async function onStart() {
   }
 }
 
-function copyCode() {
+let copiedTimer = 0;
+async function copyCode() {
   try {
-    navigator.clipboard.writeText(code.value);
+    await navigator.clipboard.writeText(code.value);
+    copied.value = true;
+    clearTimeout(copiedTimer);
+    copiedTimer = setTimeout(() => (copied.value = false), 1500);
   } catch {
     // clipboard unavailable
+  }
+}
+
+async function shareCode() {
+  try {
+    await navigator.share({ title: 'Neon Strike room', text: `Join my Neon Strike room: ${code.value}` });
+  } catch {
+    // dismissed / unsupported
   }
 }
 </script>
 
 <template>
-  <div class="flex w-full max-w-6xl flex-col items-center">
-    <!-- Gate: create / join -->
-    <template v-if="!code">
-      <div class="flex w-full justify-start">
-        <button
-          type="button"
-          class="btn-ghost gap-1.5 py-1.5 text-xs"
-          @click="goBack"
-        >
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Back
-        </button>
-      </div>
-      <div class="label">Multiplayer race</div>
-      <h2 class="mt-1 text-3xl font-semibold text-zinc-50">Squad up</h2>
-      <p class="mt-2 text-center text-[13px] text-zinc-500">
-        One shared swarm, same waves, live rival ships and skills — highest score wins.
-      </p>
+  <ScreenFrame
+    v-if="!code"
+    eyebrow="Multiplayer"
+    title="Squad up"
+    subtitle="One shared swarm, same waves, live rival ships — highest score wins."
+    back
+    width="max-w-xl"
+    @back="goBack"
+  >
+    <div class="scroll-area min-h-0 flex-1">
+      <div class="flex min-h-full flex-col justify-center gap-3 py-2">
+        <div class="panel space-y-4 p-4 roomy:p-6">
+          <div class="label">Host a room</div>
+          <div class="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              :disabled="busy"
+              class="group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-accent/25 bg-accent/7 p-3 text-left transition-all hover:border-accent/50 active:scale-[0.98] disabled:opacity-60"
+              @click="onCreate('arcade')"
+            >
+              <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-accent/15 text-accent">
+                <UiIcon :name="busy ? 'spinner' : 'users'" cls="h-4 w-4" />
+              </span>
+              <span class="font-ui text-[15px] font-bold text-zinc-100">Arcade Co-op</span>
+              <span class="line-clamp-2 text-xs leading-snug text-zinc-500">Shared battlefield. Squad total wins.</span>
+            </button>
+            <button
+              type="button"
+              :disabled="busy"
+              class="group flex min-w-0 flex-col items-start gap-2 rounded-xl border border-missile/25 bg-missile/7 p-3 text-left transition-all hover:border-missile/50 active:scale-[0.98] disabled:opacity-60"
+              @click="onCreate('versus')"
+            >
+              <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-missile/15 text-missile">
+                <UiIcon :name="busy ? 'spinner' : 'swords'" cls="h-4 w-4" />
+              </span>
+              <span class="font-ui text-[15px] font-bold text-zinc-100">Versus Duel</span>
+              <span class="line-clamp-2 text-xs leading-snug text-zinc-500">Same arena. Every 5 kills sends chargers.</span>
+            </button>
+          </div>
 
-      <div class="panel mx-auto mt-6 w-full max-w-xl p-6">
-        <button
-          type="button"
-          :disabled="busy"
-          class="mt-4 w-full rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300 disabled:opacity-60"
-          @click="onCreate('arcade')"
-        >
-          <span v-if="busy">Working…</span>
-          <span v-else class="inline-flex items-center justify-center gap-2"><UiIcon name="users" cls="h-4 w-4" />Host Arcade Co-op</span>
-        </button>
-        <p class="mt-1.5 text-[11px] text-zinc-600">One shared battlefield — your kills clear enemies off your mates' screens too. Squad total wins. Boss kills gift repairs to mates.</p>
-        <button
-          type="button"
-          :disabled="busy"
-          class="mt-2.5 w-full rounded-lg bg-missile px-4 py-2.5 text-sm font-semibold text-ink hover:brightness-110 disabled:opacity-60"
-          @click="onCreate('versus')"
-        >
-          <span v-if="busy">Working…</span>
-          <span v-else class="inline-flex items-center justify-center gap-2"><UiIcon name="swords" cls="h-4 w-4" />Host Versus Duel</span>
-        </button>
-        <p class="mt-1.5 text-[11px] text-zinc-600">Same-arena duel, rivals visible — every 5 kills sends chargers at them.</p>
+          <div class="flex items-center gap-3 text-xs text-zinc-500">
+            <span class="h-px flex-1 bg-white/10" />or join with a code<span class="h-px flex-1 bg-white/10" />
+          </div>
 
-        <div class="my-4 border-t border-white/10" />
+          <form class="flex gap-2" @submit.prevent="onJoin">
+            <label class="sr-only" for="room-code">Room code</label>
+            <input
+              id="room-code"
+              v-model="joinInput"
+              type="text"
+              maxlength="6"
+              placeholder="ABC123"
+              autocomplete="off"
+              autocapitalize="characters"
+              autocorrect="off"
+              spellcheck="false"
+              enterkeyhint="go"
+              class="input-field font-display flex-1 text-center tracking-[0.3em] uppercase"
+            />
+            <button type="submit" :disabled="busy || !joinInput.trim()" class="btn-ghost px-5">Join</button>
+          </form>
 
-        <label class="label block" for="room-code">Join with code</label>
-        <div class="mt-1.5 flex gap-2">
-          <input
-            id="room-code"
-            v-model="joinInput"
-            type="text"
-            maxlength="6"
-            placeholder="ABC123"
-            class="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm tracking-[0.2em] text-zinc-100 uppercase placeholder-zinc-600 focus:border-accent/60 focus:outline-none"
-            @keyup.enter="onJoin"
-          />
-          <button
-            type="button"
-            :disabled="busy"
-            class="rounded-lg border border-white/12 px-4 py-2 text-sm font-medium text-zinc-200 hover:border-white/25 disabled:opacity-60"
-            @click="onJoin"
-          >
-            Join
-          </button>
+          <InlineNotice v-if="error" tone="danger">{{ error }}</InlineNotice>
         </div>
-
-        <p v-if="error" class="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-          {{ error }}
-        </p>
-
-        <p class="mt-3 text-center text-[11px] text-zinc-600">
-          Tip: anyone with the code can join — add them as a friend from the pilot list inside the room, or find pilots with the search icon up top.
+        <p class="text-center text-xs text-zinc-500 short:hidden">
+          Anyone with the code can join. Invite friends from inside the room.
         </p>
       </div>
+    </div>
+  </ScreenFrame>
 
-
+  <!-- ─── Inside a room ────────────────────────────────────────────────── -->
+  <ScreenFrame
+    v-else
+    :eyebrow="`Room · ${modeLabel}`"
+    :title="code"
+    back
+    back-label="Leave"
+    width="max-w-6xl"
+    @back="goBack"
+  >
+    <template #header>
+      <button type="button" class="btn-ghost btn-sm" :aria-label="copied ? 'Room code copied' : 'Copy room code'" @click="copyCode">
+        <UiIcon :name="copied ? 'check' : 'copy'" cls="h-4 w-4" />
+        <span class="hidden sm:inline">{{ copied ? 'Copied' : 'Copy' }}</span>
+      </button>
+      <button v-if="canShare" type="button" class="btn-icon" aria-label="Share room code" @click="shareCode">
+        <UiIcon name="share" cls="h-4 w-4" />
+      </button>
     </template>
 
-    <!-- Inside room: squad columns around the central lobby -->
-    <template v-else>
-      <div class="flex w-full justify-start">
-        <button
-          type="button"
-          class="btn-ghost gap-1.5 py-1.5 text-xs"
-          @click="goBack"
-        >
-          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Back
-        </button>
-      </div>
-      <div class="label text-center">Room {{ code }} · {{ room?.mode === 'versus' ? 'Versus Duel' : 'Arcade Co-op' }}</div>
-      <div class="mt-1 flex items-center justify-center gap-3">
-        <h2 class="text-3xl font-semibold tracking-[0.2em] text-zinc-50">{{ code }}</h2>
-        <button
-          type="button"
-          class="rounded-md border border-white/12 px-2 py-1 text-[12px] text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-200"
-          @click="copyCode"
-        >
-          Copy
-        </button>
-      </div>
-      <div v-if="isHost && room?.status === 'lobby'" class="mx-auto mt-3 flex w-full max-w-xs gap-2">
-        <button
-          type="button"
-          class="flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all"
-          :class="room?.mode !== 'versus' ? 'border-accent bg-accent/10 text-zinc-100' : 'border-white/10 text-zinc-500 hover:border-white/25'"
-          @click="setRoomMode(code, 'arcade')"
-        >
-          <span class="inline-flex items-center gap-1.5"><UiIcon name="users" cls="h-3.5 w-3.5" />Arcade</span>
-        </button>
-        <button
-          type="button"
-          class="flex-1 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-all"
-          :class="room?.mode === 'versus' ? 'border-missile bg-missile/10 text-zinc-100' : 'border-white/10 text-zinc-500 hover:border-white/25'"
-          @click="setRoomMode(code, 'versus')"
-        >
-          <span class="inline-flex items-center gap-1.5"><UiIcon name="swords" cls="h-3.5 w-3.5" />Versus</span>
-        </button>
-      </div>
-      <p class="mt-2 text-center text-[13px] text-zinc-500">
-        {{ room?.status === 'done' ? 'Match over — final standings.' : isHost ? 'You are the host. Start when the squad is ready.' : 'Waiting for the host to start.' }}
-      </p>
+    <!-- Status strip -->
+    <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 pb-3 short:pb-2">
+      <SegTabs
+        v-if="isHost && status === 'lobby'"
+        :model-value="room?.mode === 'versus' ? 'versus' : 'arcade'"
+        :options="MODE_TABS"
+        label="Room mode"
+        size="sm"
+        class="w-60"
+        @update:model-value="(m) => setRoomMode(code, m)"
+      />
+      <span
+        v-else
+        class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold"
+        :class="room?.mode === 'versus' ? 'bg-missile/12 text-missile' : 'bg-accent/12 text-accent'"
+      >
+        <UiIcon :name="room?.mode === 'versus' ? 'swords' : 'users'" cls="h-3.5 w-3.5" />{{ modeLabel }}
+      </span>
+      <p class="min-w-0 flex-1 text-[13px] leading-snug text-zinc-500">{{ statusText }}</p>
+    </div>
 
-      <div class="mt-5 grid w-full items-start gap-4 lg:grid-cols-[290px_minmax(0,1fr)_560px]">
-        <!-- LEFT: squad invites -->
-        <div class="space-y-4 max-lg:order-3">
-          <section class="panel p-4">
-            <div class="label">Friends — invite</div>
-            <div v-if="!friendsNotInRoom.length" class="mt-1.5 text-[12px] text-zinc-600">
-              No friends outside this room. Add pilots in the lobby, or find more via the search icon up top.
-            </div>
-            <ul v-else class="mt-2 space-y-1.5">
-              <li v-for="f in friendsNotInRoom" :key="f.uid" class="flex items-center gap-2 text-sm">
+    <InlineNotice v-if="error" tone="danger" class="mb-3 shrink-0">{{ error }}</InlineNotice>
+
+    <!-- Phone: one section at a time -->
+    <SegTabs v-if="vp.compact" v-model="tab" :options="compactTabs" label="Room sections" class="mb-3 shrink-0 short:mb-2" />
+
+    <div
+      class="grid min-h-0 flex-1 gap-4 roomy:grid-rows-[minmax(0,1fr)_minmax(0,1fr)] roomy:lg:grid-cols-[minmax(0,1fr)_minmax(20rem,26rem)] roomy:lg:grid-rows-1"
+    >
+      <!-- Squad: members + live / final standings -->
+      <section v-if="!vp.compact || tab === 'squad'" class="panel flex min-h-0 flex-col overflow-hidden">
+        <div class="flex shrink-0 items-center justify-between gap-2 px-4 pt-3">
+          <div class="label">{{ status === 'lobby' ? `Pilots (${members.length})` : status === 'done' ? 'Final standings' : 'Live standings' }}</div>
+          <div
+            v-if="status !== 'lobby' && room?.mode !== 'versus'"
+            class="rounded-lg bg-accent/10 px-2 py-0.5 text-xs font-semibold text-accent tabular-nums"
+          >
+            Squad {{ squadTotal.toLocaleString() }}
+          </div>
+        </div>
+
+        <div class="scroll-area flex-1 space-y-1.5 p-3">
+          <!-- Lobby: who's here + ready state + friend actions -->
+          <template v-if="status === 'lobby'">
+            <PilotRow
+              v-for="m in members"
+              :key="m.id"
+              :name="m.name"
+              :photo="m.photo"
+              :you="m.id === uid"
+              size="sm"
+            >
+              <template #badges>
+                <span v-if="m.id === room?.host" class="shrink-0 rounded bg-skill/15 px-1.5 py-0.5 text-[10px] font-bold text-skill">HOST</span>
+              </template>
+              <template #sub>
+                <span class="inline-flex items-center gap-1.5">
+                  <span class="h-2 w-2 rounded-full" :style="{ background: shipDef(m.ship).color }" />{{ shipDef(m.ship).name }}
+                </span>
+              </template>
+              <template #actions>
+                <template v-if="m.id !== uid">
+                  <span v-if="friendUids.has(m.id)" class="hidden rounded-full border border-skill/30 px-2 py-0.5 text-[10px] font-semibold text-skill sm:inline">FRIEND</span>
+                  <button
+                    v-else-if="incomingByUid.has(m.id)"
+                    type="button"
+                    class="btn-primary btn-sm"
+                    @click="onAcceptFriend(incomingByUid.get(m.id))"
+                  >
+                    Accept
+                  </button>
+                  <span v-else-if="sentMap[m.id]" class="px-1 text-[11px] font-medium text-zinc-500">Sent</span>
+                  <button
+                    v-else
+                    type="button"
+                    :disabled="friendSending === m.id"
+                    class="btn-ghost btn-sm px-2"
+                    :aria-label="`Add ${m.name} as friend`"
+                    @click="onAddFriend(m)"
+                  >
+                    <UiIcon :name="friendSending === m.id ? 'spinner' : 'user-plus'" cls="h-3.5 w-3.5" />
+                  </button>
+                </template>
                 <span
-                  class="h-2 w-2 shrink-0 rounded-full"
-                  :class="onlineIds.has(f.uid) ? 'bg-repair' : 'bg-zinc-700'"
-                  :title="onlineIds.has(f.uid) ? 'Online' : 'Offline'"
-                />
-                <span class="min-w-0 flex-1 truncate font-medium text-zinc-200">{{ f.name }}</span>
-                <button
-                  v-if="!sentIds.has(f.uid)"
-                  type="button"
-                  class="shrink-0 rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
-                  @click="invite(f)"
+                  class="rounded-full px-2 py-1 text-[10px] font-bold"
+                  :class="m.ready ? 'bg-shock/15 text-shock' : 'bg-white/5 text-zinc-500'"
                 >
-                  Invite
-                </button>
-                <span v-else class="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
-              </li>
-            </ul>
-          </section>
+                  {{ m.ready ? 'READY' : 'WAITING' }}
+                </span>
+              </template>
+            </PilotRow>
+          </template>
 
-          <section class="panel p-4">
-            <div class="label">Online pilots — invite</div>
-            <div v-if="!othersOnline.length" class="mt-1.5 text-[12px] text-zinc-600">
-              Nobody else online right now.
-            </div>
-            <ul v-else class="mt-2 space-y-1.5">
-              <li v-for="p in othersOnline" :key="p.uid" class="flex items-center gap-2 text-sm">
-                <span class="min-w-0 flex-1 truncate font-medium text-zinc-200">{{ p.name }}</span>
-                <button
-                  v-if="!sentIds.has(p.uid)"
-                  type="button"
-                  class="shrink-0 rounded-md border border-accent/40 px-2.5 py-1 text-[11px] font-semibold text-accent transition-colors hover:bg-accent/10"
-                  @click="invite(p)"
-                >
-                  Invite
-                </button>
-                <span v-else class="inline-flex shrink-0 items-center gap-1 text-[11px] font-semibold text-shock">Invited<UiIcon name="check" cls="h-3 w-3" /></span>
-              </li>
-            </ul>
-          </section>
-        </div>
-
-        <!-- MIDDLE: the lobby -->
-        <div class="panel min-w-0 p-5 max-lg:order-1">
-          <div class="label">Pilots ({{ members.length }})</div>
-        <ul class="mt-2 space-y-2">
-          <li
-            v-for="m in members"
-            :key="m.id"
-            class="flex flex-wrap items-center gap-2.5 rounded-lg border border-white/5 bg-white/2 px-3 py-2"
-          >
-            <img
-              v-if="m.photo"
-              :src="m.photo"
-              alt=""
-              class="h-8 w-8 shrink-0 rounded-full border border-white/10 object-cover"
-            />
-            <div
-              v-else
-              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/5 text-sm font-semibold text-accent"
+          <!-- Playing / done: standings -->
+          <ol v-else class="space-y-1.5">
+            <li
+              v-for="(s, i) in standings"
+              :key="s.id"
+              class="flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-sm tabular-nums"
+              :class="s.id === uid ? 'border-accent/25 bg-accent/5' : 'border-white/6 bg-white/3'"
             >
-              {{ initialOf(m.name) }}
-            </div>
-            <span class="text-sm font-medium" :class="m.id === uid ? 'text-accent' : 'text-zinc-200'">
-              {{ m.name }}{{ m.id === uid ? ' (you)' : '' }}
-            </span>
-            <span v-if="m.id === room?.host" class="rounded bg-skill/15 px-1.5 py-0.5 text-[10px] font-bold text-skill">HOST</span>
-            <span class="ml-auto inline-flex items-center gap-1.5 text-[11px] text-zinc-500"><span class="h-2 w-2 rounded-full" :style="{ background: shipDef(m.ship).color }" />{{ shipDef(m.ship).name }}</span>
-            <span
-              class="rounded-full px-2 py-0.5 text-[10px] font-bold"
-              :class="m.ready ? 'bg-shock/15 text-shock' : 'bg-white/5 text-zinc-500'"
-            >
-              {{ m.ready ? 'READY' : 'WAITING' }}
-            </span>
-            <template v-if="m.id !== uid">
-              <span
-                v-if="friendUids.has(m.id)"
-                class="rounded-full border border-skill/30 px-2 py-0.5 text-[10px] font-medium text-skill"
-              >
-                FRIENDS
+              <span class="w-5 text-center font-bold" :class="i === 0 ? 'text-skill' : 'text-zinc-500'">{{ i + 1 }}</span>
+              <Avatar :photo="memberPhoto(s.id)" :name="s.name" size="xs" />
+              <span class="flex min-w-0 flex-1 items-center gap-1 font-semibold" :class="s.id === uid ? 'text-accent' : 'text-zinc-200'">
+                <span class="truncate">{{ s.name }}</span>
+                <UiIcon v-if="s.done && status === 'playing'" name="check" cls="h-3.5 w-3.5 shrink-0 text-shock" />
               </span>
-              <button
-                v-else-if="incomingByUid.has(m.id)"
-                type="button"
-                class="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-ink transition-colors hover:bg-sky-300"
-                @click="onAcceptFriend(incomingByUid.get(m.id))"
-              >
-                ACCEPT
-              </button>
-              <span
-                v-else-if="sentMap[m.id]"
-                class="rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-zinc-500"
-              >
-                SENT ✓
-              </span>
-              <button
-                v-else
-                type="button"
-                :disabled="friendSending === m.id"
-                class="rounded-full border border-accent/40 px-2 py-0.5 text-[10px] font-bold text-accent transition-colors hover:bg-accent/10 disabled:opacity-60"
-                @click="onAddFriend(m)"
-              >
-                {{ friendSending === m.id ? '…' : '+ ADD' }}
-              </button>
-            </template>
-          </li>
-        </ul>
-        <p v-if="friendMsg" class="mt-2 text-[12px] text-zinc-400">{{ friendMsg }}</p>
+              <span class="font-bold text-zinc-100">{{ s.score.toLocaleString() }}</span>
+              <span class="w-10 text-right text-xs text-zinc-500">W{{ s.wave }}</span>
+            </li>
+          </ol>
 
-        <div v-if="room?.status === 'lobby'" class="mt-4 flex gap-2">
-          <button
-            type="button"
-            class="flex-1 rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-zinc-200 hover:border-white/25"
-            @click="onReady"
-          >
-            {{ me?.ready ? 'Unready' : 'Ready up' }}
-          </button>
-          <button
-            v-if="isHost"
-            type="button"
-            :disabled="members.length < 1"
-            class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300 disabled:opacity-60"
-            @click="onStart"
-          >
-            Start match
-          </button>
-        </div>
-
-        <div v-if="room?.status === 'playing'" class="mt-4">
-          <div class="label">Match in progress</div>
-          <p class="mt-1 text-[12px] text-zinc-500">
+          <p v-if="status === 'playing'" class="pt-1 text-xs leading-snug text-zinc-500">
             {{
               room?.mode === 'versus'
                 ? 'Every 5 kills sends chargers at your rivals. Highest score wins.'
-                : 'Shared swarm — what you kill dies on every screen. Squad total counts. Boss kills gift repairs to teammates.'
+                : 'Shared swarm — what you kill dies on every screen. Boss kills gift repairs to teammates.'
             }}
           </p>
-          <ol class="mt-2 space-y-1.5">
-            <li
-              v-for="(s, i) in standings"
-              :key="s.id"
-              class="flex items-center gap-2 text-sm tabular-nums"
-              :class="s.id === uid ? 'text-accent' : 'text-zinc-300'"
-            >
-              <span class="w-6 text-zinc-500">{{ i + 1 }}</span>
-              <img
-                v-if="memberPhoto(s.id)"
-                :src="memberPhoto(s.id)"
-                alt=""
-                class="h-6 w-6 shrink-0 rounded-full border border-white/10 object-cover"
-              />
-              <div
-                v-else
-                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-accent"
-              >
-                {{ initialOf(s.name) }}
+          <p v-if="friendMsg" class="pt-1 text-[13px] text-zinc-400">{{ friendMsg }}</p>
+        </div>
+      </section>
+
+      <!-- Loadout / invite -->
+      <section v-if="!vp.compact || tab !== 'squad'" class="panel flex min-h-0 flex-col overflow-hidden">
+        <SegTabs v-if="!vp.compact" v-model="sideTab" :options="sideTabs" label="Room options" size="sm" class="m-3 mb-0 shrink-0" />
+
+        <div class="scroll-area flex-1 p-3">
+          <!-- Loadout -->
+          <div v-if="paneTab === 'loadout'" class="grid gap-4 short:grid-cols-2">
+            <div class="min-w-0">
+              <div class="label mb-2">Your ship</div>
+              <div class="grid grid-cols-5 gap-1.5" role="radiogroup" aria-label="Your ship">
+                <button
+                  v-for="c in CHARACTER_LIST"
+                  :key="c.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="ship === c.id"
+                  :aria-label="c.name"
+                  :title="c.title"
+                  class="flex min-w-0 flex-col items-center gap-1 rounded-xl border px-1 py-1.5 text-center transition-all"
+                  :class="ship === c.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
+                  @click="ship = c.id"
+                >
+                  <ShipPreview :id="c.id" :color="c.color" cls="w-full max-w-12" />
+                  <span class="w-full truncate text-[10px] font-semibold" :class="ship === c.id ? 'text-zinc-100' : 'text-zinc-500'">{{ c.name }}</span>
+                </button>
               </div>
-              <span class="inline-flex items-center gap-1 font-medium">{{ s.name }}<UiIcon v-if="s.done" name="check" cls="h-3 w-3 text-shock" /></span>
-              <span class="ml-auto">{{ s.score.toLocaleString() }}</span>
-              <span class="w-14 text-right text-[12px] text-zinc-500">W{{ s.wave }}</span>
-            </li>
-          </ol>
-          <div class="mt-4 flex gap-2">
-            <button
-              type="button"
-              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300"
-              @click="deployed = true; $emit('deploy', code)"
-            >
-              Back to run
-            </button>
-          </div>
-        </div>
-
-        <div v-if="room?.status === 'done'" class="mt-4">
-          <div
-            v-if="room?.mode !== 'versus'"
-            class="mb-2 rounded-lg bg-accent/10 px-3 py-2 text-sm font-semibold text-accent tabular-nums"
-          >
-            Squad total: {{ squadTotal.toLocaleString() }}
-          </div>
-          <div class="label">Final standings</div>
-          <ol class="mt-2 space-y-1.5">
-            <li
-              v-for="(s, i) in standings"
-              :key="s.id"
-              class="flex items-center gap-2 text-sm tabular-nums"
-              :class="s.id === uid ? 'text-accent' : 'text-zinc-300'"
-            >
-              <span class="w-6 text-zinc-500">{{ i + 1 }}</span>
-              <img
-                v-if="memberPhoto(s.id)"
-                :src="memberPhoto(s.id)"
-                alt=""
-                class="h-6 w-6 shrink-0 rounded-full border border-white/10 object-cover"
-              />
-              <div
-                v-else
-                class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/10 text-[10px] font-semibold text-accent"
-              >
-                {{ initialOf(s.name) }}
-              </div>
-              <span class="font-medium">{{ s.name }}</span>
-              <span class="ml-auto">{{ s.score.toLocaleString() }}</span>
-              <span class="w-14 text-right text-[12px] text-zinc-500">W{{ s.wave }}</span>
-            </li>
-          </ol>
-          <div v-if="isHost" class="mt-4 flex gap-2">
-            <button
-              type="button"
-              class="flex-1 rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-ink hover:bg-sky-300"
-              @click="onStart"
-            >
-              Rematch
-            </button>
-            <button
-              type="button"
-              class="flex-1 rounded-lg border border-white/12 px-4 py-2.5 text-sm font-medium text-zinc-200 hover:border-white/25"
-              @click="backToRoomLobby(code)"
-            >
-              To room lobby
-            </button>
-          </div>
-        </div>
-
-        <div v-if="allDone && room?.status === 'playing'" class="mt-4">
-          <button
-            type="button"
-            class="w-full rounded-lg bg-skill px-4 py-2.5 text-sm font-semibold text-ink hover:brightness-110"
-            @click="showResults(code)"
-          >
-            Everyone finished — show results
-          </button>
-        </div>
-
-          <p v-if="error" class="mt-3 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] text-danger">
-            {{ error }}
-          </p>
-        </div>
-
-        <!-- RIGHT: loadout (ships beside maps) -->
-        <div class="grid gap-4 max-lg:order-2 sm:grid-cols-2 lg:grid-cols-2">
-          <section class="panel min-w-0 p-4">
-            <div class="label">Your ship</div>
-            <div class="mt-2 grid grid-cols-2 gap-2">
-              <button
-                v-for="c in CHARACTER_LIST"
-                :key="c.id"
-                type="button"
-                class="flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-center transition-all"
-                :class="ship === c.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
-                :title="c.title"
-                @click="ship = c.id"
-              >
-                <ShipPreview :id="c.id" :color="c.color" />
-                <span class="w-full truncate text-[11px] font-semibold" :class="ship === c.id ? 'text-zinc-100' : 'text-zinc-500'">{{ c.name }}</span>
-              </button>
-            </div>
-            <p class="mt-2 text-[11px] text-zinc-600">{{ shipDef(ship).title }} — {{ shipDef(ship).desc }}</p>
-          </section>
-
-          <section class="panel min-w-0 p-4">
-            <div class="label">Arena map</div>
-            <div
-              v-if="isHost && room?.status === 'lobby'"
-              class="mt-2 space-y-2"
-            >
-              <button
-                v-for="mp in MAP_PICKS"
-                :key="mp.id"
-                type="button"
-                class="flex w-full items-center gap-3 rounded-xl border p-2 text-left transition-all"
-                :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
-                @click="setRoomMap(code, mp.id)"
-              >
-                <div class="w-24 shrink-0">
-                  <MapPreview :map-id="mp.id" />
-                </div>
-                <div class="min-w-0">
-                  <div class="text-[12px] font-semibold text-zinc-100">{{ mp.name }}</div>
-                  <div class="mt-0.5 text-[11px] leading-snug text-zinc-500">{{ mp.desc }}</div>
-                </div>
-              </button>
-            </div>
-            <div v-else class="mt-2">
-              <MapPreview :map-id="shownMap.id" />
-              <p class="mt-1.5 text-[13px] text-zinc-300">
-                {{ shownMap.name }} <span class="text-zinc-500">— {{ shownMap.desc }}</span>
+              <p class="mt-2 text-xs leading-snug text-zinc-500">
+                <span class="font-semibold text-zinc-300">{{ shipDef(ship).title }}</span> — {{ shipDef(ship).desc }}
               </p>
             </div>
-          </section>
-        </div>
-      </div>
 
-      <p class="mt-4 text-center text-[12px] text-zinc-600">Leaving? The Back button above checks you out of the room. Pausing mid-match pauses the whole squad.</p>
+            <div class="min-w-0">
+              <div class="label mb-2">Arena map</div>
+              <div v-if="isHost && status === 'lobby'" class="space-y-1.5" role="radiogroup" aria-label="Arena map">
+                <button
+                  v-for="mp in MAP_PICKS"
+                  :key="mp.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="(room?.mapPick ?? 'grid') === mp.id"
+                  class="flex w-full items-center gap-3 rounded-xl border p-1.5 text-left transition-all"
+                  :class="(room?.mapPick ?? 'grid') === mp.id ? 'border-accent bg-accent/10' : 'border-white/10 hover:border-white/25'"
+                  @click="setRoomMap(code, mp.id)"
+                >
+                  <div class="w-16 shrink-0"><MapPreview :map-id="mp.id" /></div>
+                  <div class="min-w-0">
+                    <div class="truncate text-[13px] font-semibold text-zinc-100">{{ mp.name }}</div>
+                    <div class="line-clamp-1 text-xs text-zinc-500">{{ mp.desc }}</div>
+                  </div>
+                </button>
+              </div>
+              <div v-else class="flex items-center gap-3">
+                <div class="w-28 shrink-0"><MapPreview :map-id="shownMap.id" /></div>
+                <p class="min-w-0 text-[13px] text-zinc-300">
+                  {{ shownMap.name }}<span class="block text-xs text-zinc-500">{{ shownMap.desc }}</span>
+                  <span v-if="!isHost" class="mt-1 block text-xs text-zinc-500">The host picks the arena.</span>
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Invite -->
+          <div v-else class="space-y-4">
+            <div>
+              <div class="label mb-2">Friends</div>
+              <p v-if="!friendsNotInRoom.length" class="text-[13px] text-zinc-500">
+                No friends outside this room. Add pilots from the squad list or the Friends page.
+              </p>
+              <div v-else class="space-y-1.5">
+                <PilotRow
+                  v-for="f in friendsNotInRoom"
+                  :key="f.uid"
+                  :name="f.name"
+                  :photo="f.photo"
+                  :online="onlineIds.has(f.uid)"
+                  :sub="onlineIds.has(f.uid) ? 'Online' : 'Offline'"
+                  size="sm"
+                >
+                  <template #actions>
+                    <button v-if="!sentIds.has(f.uid)" type="button" class="btn-ghost btn-sm border-accent/40 text-accent" @click="invite(f)">
+                      Invite
+                    </button>
+                    <span v-else class="inline-flex items-center gap-1 px-1 text-xs font-semibold text-shock">
+                      Invited <UiIcon name="check" cls="h-3.5 w-3.5" />
+                    </span>
+                  </template>
+                </PilotRow>
+              </div>
+            </div>
+            <div>
+              <div class="label mb-2">Online pilots</div>
+              <p v-if="!othersOnline.length" class="text-[13px] text-zinc-500">Nobody else online right now.</p>
+              <div v-else class="space-y-1.5">
+                <PilotRow v-for="p in othersOnline" :key="p.uid" :name="p.name" :online="true" size="sm">
+                  <template #actions>
+                    <button v-if="!sentIds.has(p.uid)" type="button" class="btn-ghost btn-sm border-accent/40 text-accent" @click="invite(p)">
+                      Invite
+                    </button>
+                    <span v-else class="inline-flex items-center gap-1 px-1 text-xs font-semibold text-shock">
+                      Invited <UiIcon name="check" cls="h-3.5 w-3.5" />
+                    </span>
+                  </template>
+                </PilotRow>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ─── Pinned, state-based actions ─────────────────────────────────── -->
+    <template #actions>
+      <template v-if="status === 'lobby'">
+        <button type="button" class="btn-ghost flex-1 roomy:flex-none roomy:min-w-40" :class="me?.ready ? 'border-shock/40 text-shock' : ''" @click="onReady">
+          <UiIcon v-if="me?.ready" name="check" cls="h-4 w-4" />
+          {{ me?.ready ? 'Ready' : 'Ready up' }}
+        </button>
+        <button
+          v-if="isHost"
+          type="button"
+          :disabled="members.length < 1"
+          class="btn-primary font-ui flex-1 font-bold tracking-wider roomy:ml-auto roomy:flex-none roomy:min-w-56"
+          @click="onStart"
+        >
+          <UiIcon name="rocket" cls="h-4 w-4" /> Start match
+        </button>
+        <p v-else class="flex-1 text-right text-xs text-zinc-500">Host starts the match</p>
+      </template>
+
+      <template v-else-if="status === 'playing'">
+        <button v-if="allDone" type="button" class="btn flex-1 bg-skill text-ink hover:brightness-110 roomy:flex-none" @click="showResults(code)">
+          <UiIcon name="trophy" cls="h-4 w-4" /> Show results
+        </button>
+        <button
+          type="button"
+          class="btn-primary font-ui flex-1 font-bold tracking-wider roomy:ml-auto roomy:flex-none roomy:min-w-56"
+          @click="deployed = true; $emit('deploy', code)"
+        >
+          Back to run <UiIcon name="chevron-right" cls="h-4 w-4" />
+        </button>
+      </template>
+
+      <template v-else-if="status === 'done'">
+        <template v-if="isHost">
+          <button type="button" class="btn-ghost flex-1 roomy:flex-none roomy:min-w-40" @click="backToRoomLobby(code)">To room lobby</button>
+          <button type="button" class="btn-primary font-ui flex-1 font-bold tracking-wider roomy:ml-auto roomy:flex-none roomy:min-w-56" @click="onStart">
+            <UiIcon name="refresh" cls="h-4 w-4" /> Rematch
+          </button>
+        </template>
+        <p v-else class="flex-1 text-center text-[13px] text-zinc-500">Waiting for the host — rematch or back to the lobby.</p>
+      </template>
     </template>
-  </div>
+  </ScreenFrame>
 </template>

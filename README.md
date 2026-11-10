@@ -59,7 +59,7 @@ invites/{uid}/items/… = { fromUid, fromName, roomCode, mode, ts }
 | **E** | Shockwave — heavy radial damage + knockback (15s) |
 | **P / Esc** | Pause / resume |
 | **M** | Mute / unmute |
-| Touch | Left virtual stick to move, right side drag to aim, buttons to fire/dash/missiles/shock |
+| Touch | Drag anywhere on the left to move (floating stick); right stick aims + fires (tap its centre to shoot ahead); Dash / Missiles / Ultimate buttons sit around the aim stick. Phones play in landscape (a rotate prompt covers the app while upright; Android can jump to fullscreen landscape). Stick size, left-handed layout and an on/off override live in Settings. |
 
 Kills charge a combo multiplier (up to x5). Taking damage resets combo.
 Special enemies drop buffs / pickups:
@@ -83,17 +83,28 @@ src/
   composables/
     useGame.js        # loop, input, pause, touch, settings wiring
     useLeaderboard.js # localStorage top-10 with validation
-    useSettings.js    # volume/shake/fps/mute persisted settings
+    useSettings.js    # volume/shake/fps/mute/theme/touch persisted settings
+    useViewport.js    # reactive viewport tiers (compact / short / portrait / touch)
+    useOrientation.js # fullscreen + landscape lock (Android)
     useAuth.js        # Firebase email/password auth + offline mode
     useCloudBoard.js  # global top-10 scores in RTDB
     useRoom.js        # multiplayer race rooms in RTDB
   components/
+    AppHeader.vue, NotificationLayer.vue, RotateGate.vue (phones: landscape only),
     AuthScreen.vue, MainMenu.vue, SettingsScreen.vue, RoomsScreen.vue,
+    ProfileScreen.vue, FriendsScreen.vue, PlayerProfileModal.vue,
     RacePanel.vue, Lobby.vue, GameStage.vue, Hud.vue, AbilityBar.vue,
     Minimap.vue, Banner.vue, StatBar.vue, GameOverOverlay.vue,
-    PauseOverlay.vue, SettingsPanel.vue, TouchControls.vue,
+    PauseOverlay.vue, TouchControls.vue,
     Leaderboard.vue (Local/Global tabs), HowToPlay.vue
+    ui/  ScreenFrame, Sheet, SegTabs, PilotRow, Avatar, StatTile, …
 ```
+
+* Layout: the document never scrolls. Every screen fits the viewport
+  (`h-dvh` shell → `ScreenFrame` with a pinned action bar); only long lists
+  scroll inside their own panel. Viewport tiers are Tailwind custom variants
+  in `src/style.css`: `compact` (phones), `short` (landscape phones), `roomy`
+  (tablet / desktop).
 
 * Engine never touches DOM. Vue reads a `hud` mirror synced once per frame.
 * Simulation is tick-based (`STEP_MS = 1000/60`). Cooldowns are in ticks, not `Date.now()`, so pause/hidden tabs don't desync.

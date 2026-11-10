@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Neon Strike — fast top-down arena shooter. Dash, missiles, shockwaves. Survive the waves." />
     <meta name="theme-color" content="#08080c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Neon Strike" />
     <title>Neon Strike</title>
     <script>
       // Apply saved theme before first paint (avoids a dark flash in light mode).
@@ -12,16 +16,17 @@
         var s = JSON.parse(localStorage.getItem('neonStrike_settings_v1') || '{}');
         if (s.theme === 'light') {
           document.documentElement.classList.add('light');
-          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#eef1f6');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', '#edf0f5');
         }
       } catch (e) {}
     </script>
     <link rel="icon" type="image/png" href="./brand/logo.png" />
+    <link rel="apple-touch-icon" href="./brand/logo.png" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
   </head>

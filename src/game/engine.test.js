@@ -1044,4 +1044,71 @@ describe('canvas theme', () => {
   });
 });
 
+describe('responsive view + touch input', () => {
+  it('accepts a narrow portrait view (old 600-unit floor would stretch it)', () => {
+    const { g } = makeGame();
+    g.setView(420, 900);
+    expect(g.camera.width).toBe(420);
+    expect(g.camera.height).toBe(900);
+  });
+
+  it('never carries held stick / fire input across a pause or a restart', () => {
+    const { g } = makeGame();
+    g.setMoveVector(1, 0);
+    g.fireHeld = true;
+    g.pause();
+    expect(g.moveVector).toEqual({ x: 0, y: 0 });
+    expect(g.fireHeld).toBe(false);
+
+    g.resume();
+    g.setMoveVector(0, 1);
+    g.fireHeld = true;
+    g.start();
+    expect(g.moveVector).toEqual({ x: 0, y: 0 });
+    expect(g.fireHeld).toBe(false);
+  });
+
+  it('keeps the twin-stick aim direction exact when the camera is clamped at a world edge', () => {
+    const { g } = makeGame();
+    g.setView(750, 1334);
+    // Ship in the top-left corner: the camera clamps, so the ship is off-centre.
+    g.player.x = g.player.radius + 2;
+    g.player.y = g.player.radius + 2;
+    g.updateCamera();
+    for (const [dx, dy] of [
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+      [0, -1],
+      [1, 1],
+      [-1, 1],
+      [-2, -1],
+    ]) {
+      g.setAimVector(dx, dy);
+      const wp = g.worldPointer;
+      const ax = wp.x - g.player.x;
+      const ay = wp.y - g.player.y;
+      expect(Math.hypot(ax, ay)).toBeGreaterThan(0);
+      expect(Math.abs(Math.atan2(ay, ax) - Math.atan2(dy, dx))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('re-derives stick aim each tick so it does not drift as the ship moves', () => {
+    const { g } = makeGame();
+    g.setAimVector(0, -1);
+    g.setKey('KeyD', true);
+    for (let i = 0; i < 30; i += 1) g.update();
+    const wp = g.worldPointer;
+    expect(Math.abs(Math.atan2(wp.y - g.player.y, wp.x - g.player.x) - Math.atan2(-1, 0))).toBeLessThan(1e-6);
+  });
+
+  it('lets the mouse take over from a stick direction', () => {
+    const { g } = makeGame();
+    g.setAimVector(1, 0);
+    expect(g.aimDir).not.toBeNull();
+    g.setPointer(10, 10);
+    expect(g.aimDir).toBeNull();
+  });
+});
+
 export { MISSILE, SHOCK };

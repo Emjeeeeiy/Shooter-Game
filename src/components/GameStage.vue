@@ -1,4 +1,5 @@
 <script setup>
+// Template: Full-bleed stage: no top bar; touch-action none so the browser never pans, zooms or pull-to-refreshes mid-run.
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useGame } from '../composables/useGame.js';
 import { useLeaderboard } from '../composables/useLeaderboard.js';
@@ -16,6 +17,9 @@ import PauseOverlay from './PauseOverlay.vue';
 import RacePanel from './RacePanel.vue';
 import StatBar from './StatBar.vue';
 import TouchControls from './TouchControls.vue';
+import UiIcon from './UiIcon.vue';
+import { useViewport } from '../composables/useViewport.js';
+import { canFullscreen, enterLandscape, exitFullscreen } from '../composables/useOrientation.js';
 
 const props = defineProps({
   characterId: { type: String, default: 'vanguard' },
@@ -308,26 +312,42 @@ function onLobby() {
   emit('lobby');
 }
 
-// Landscape-only on phones: prompt to rotate + auto-pause while portrait.
-const isPortraitPhone = ref(false);
+// Touch controls: the setting decides; 'auto' = touch-first device, or any
+// touch seen on the stage (covers laptops with touchscreens).
+const vp = useViewport();
+const touchSeen = ref(false);
+const touchOn = computed(
+  () =>
+    settings.touchControls === 'on' ||
+    (settings.touchControls === 'auto' && (vp.coarse || touchSeen.value)),
+);
+// Phones play landscape only (App shows the rotate gate when upright); the
+// portrait HUD remains for tablets held upright.
+const hudMode = computed(() =>
+  touchOn.value ? (vp.portrait ? 'touch-portrait' : 'touch-landscape') : 'desktop',
+);
+const showMap = ref(false); // upright tablets: minimap on demand
 
-// Touch controls: any coarse-pointer device (phones AND tablets, any size).
-const isTouch = ref(false);
-let coarseQuery = null;
-
-function syncTouchCapable(e) {
-  isTouch.value = e?.matches ?? window.matchMedia?.('(pointer: coarse)').matches ?? false;
+function onStageTouch() {
+  touchSeen.value = true;
 }
 
-function checkOrientation() {
-  const coarse = window.matchMedia?.('(pointer: coarse)').matches ?? false;
-  isPortraitPhone.value =
-    coarse && window.innerWidth < 820 && window.innerHeight > window.innerWidth;
+// Turning a phone upright mid-run pauses it (the rotate gate covers the
+// stage). Rotating back leaves it paused until the player taps Resume.
+function pauseIfUpright() {
+  if (vp.portraitPhone && hud.running && !hud.paused && !hud.gameOver) togglePause();
 }
+watch(() => vp.portraitPhone, pauseIfUpright);
 
-watch(isPortraitPhone, (portrait) => {
-  if (portrait && hud.running && !hud.paused && !hud.gameOver) togglePause();
-});
+// Fullscreen hides browser chrome and, on Android, locks landscape.
+const isFullscreen = ref(false);
+function syncFullscreen() {
+  isFullscreen.value = !!document.fullscreenElement;
+}
+async function toggleFullscreen() {
+  if (document.fullscreenElement) await exitFullscreen();
+  else await enterLandscape();
+}
 
 function syncAudio() {
   sfx.setMuted(settings.muted);
@@ -359,19 +379,13 @@ function raceOpts() {
 function beginRun() {
   setPilotName(props.pilotName);
   start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts());
-  if (isPortraitPhone.value && hud.running && !hud.paused && !hud.gameOver) togglePause();
+  pauseIfUpright();
 }
 
 onMounted(() => {
   syncAudio();
   window.addEventListener('neon:toggle-mute', onMuteEvent);
-  window.addEventListener('resize', checkOrientation);
-  window.addEventListener('orientationchange', checkOrientation);
-  checkOrientation();
-  coarseQuery = window.matchMedia?.('(pointer: coarse)') ?? null;
-  syncTouchCapable(coarseQuery);
-  if (coarseQuery?.addEventListener) coarseQuery.addEventListener('change', syncTouchCapable);
-  else coarseQuery?.addListener?.(syncTouchCapable);
+  document.addEventListener('fullscreenchange', syncFullscreen);
   const gunDelay = (props.race?.startsAt ?? 0) - Date.now();
   if (props.race && gunDelay > 0) {
     // Synced room start: hold on the gun-time so every client ticks from
@@ -394,9 +408,8 @@ onMounted(() => {
   }
 });
 onBeforeUnmount(() => {
-  if (coarseQuery?.removeEventListener) coarseQuery.removeEventListener('change', syncTouchCapable);
-  else coarseQuery?.removeListener?.(syncTouchCapable);
-  coarseQuery = null;  if (syncTimer) {
+  document.removeEventListener('fullscreenchange', syncFullscreen);
+  if (syncTimer) {
     clearTimeout(syncTimer);
     syncTimer = null;
   }
@@ -409,11 +422,9 @@ onBeforeUnmount(() => {
     liveTimer = null;
   }
   window.removeEventListener('neon:toggle-mute', onMuteEvent);
-  window.removeEventListener('resize', checkOrientation);
-  window.removeEventListener('orientationchange', checkOrientation);
 });
 
-// Touch aim: drag on the canvas aims; FIRE button holds fire.
+// Dragging on open canvas (outside the sticks) aims at the finger.
 function onTouchAimFire(e) {
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -430,135 +441,189 @@ const shakeClass = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-full w-full min-w-0 flex-col">
-    <div class="flex items-center justify-between gap-3 px-4 py-2">
-      <div class="flex min-w-0 items-center gap-2 text-[12px]">
-        <span class="h-2 w-2 shrink-0 rounded-full" :style="{ background: hud.characterColor }" />
-        <span class="truncate font-medium text-zinc-300">{{ hud.characterName }}</span>
-        <span class="truncate text-zinc-500">· {{ pilotName }}</span>
-      </div>
-      <button
-        v-if="hud.running && !hud.gameOver"
-        type="button"
-        class="panel shrink-0 px-3 py-1.5 text-[12px] font-medium text-zinc-400 transition-colors hover:text-zinc-100"
-        @click="onPauseButton"
-      >
-        {{ hud.paused ? 'Resume' : 'Pause' }} <kbd class="ml-1">P</kbd>
-      </button>
-    </div>
-
-    <div
-      class="relative min-h-0 w-full flex-1 overflow-hidden bg-surface select-none"
-      :class="shakeClass"
-    >
+  <div
+    class="relative h-full w-full min-w-0 touch-none overflow-hidden bg-surface select-none [-webkit-touch-callout:none]"
+    @touchstart.passive="onStageTouch"
+  >
+    <!-- Shake moves the world only — never the controls under your thumbs. -->
+    <div class="absolute inset-0" :class="shakeClass">
       <canvas
         ref="canvasRef"
-        class="absolute inset-0 h-full w-full cursor-crosshair touch-none"
+        class="absolute inset-0 h-full w-full cursor-crosshair"
         @mousemove="onPointerMove"
         @mousedown="onPointerDown"
         @touchmove.prevent="onTouchAimFire"
       />
-
-      <!-- HUD layer: purely presentational, driven by the reactive `hud` mirror. -->
-      <div class="pointer-events-none absolute inset-0">
-        <div class="absolute top-4 left-4"><Hud :hud="hud" :fps="fps" :show-fps="settings.showFps" /></div>
-
-        <div class="absolute top-4 right-4 hidden md:block">
-          <Minimap @ready="setMinimapEl" />
-        </div>
-
-        <div class="absolute bottom-4 left-4 w-40 sm:w-48">
-          <StatBar label="Integrity" :value="hud.health" :max="hud.maxHealth" tone="danger" />
-        </div>
-
-        <div class="absolute bottom-4 left-1/2 hidden -translate-x-1/2 sm:block">
-          <AbilityBar :hud="hud" />
-        </div>
-
-        <div class="absolute right-4 bottom-4 w-32 sm:w-36">
-          <StatBar
-            label="Energy"
-            :value="hud.energy"
-            :max="ENERGY.max"
-            tone="accent"
-            align="right"
-          />
-        </div>
-
-        <div v-if="race" class="absolute top-4 left-1/2 hidden -translate-x-1/2 lg:block">
-          <RacePanel :code="race.code" :my-uid="race.uid" />
-        </div>
-
-        <Banner :banner="banner" :notice="notice" />
-      </div>
-
-      <div
-        v-if="syncWait > 0"
-        class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-surface/85 backdrop-blur-sm"
-      >
-        <div class="text-5xl font-semibold text-accent tabular-nums">{{ syncWait }}</div>
-        <div class="text-sm font-medium text-zinc-300">Entering shared arena…</div>
-        <p class="text-[12px] text-zinc-500">Synced start — same map, same waves.</p>
-      </div>
-
-      <TouchControls
-        v-if="isTouch && hud.running && !hud.paused && !hud.gameOver"
-        @move="(x, y) => setTouchMove(x, y)"
-        @aim-fire="(dx, dy) => setTouchAimVector(dx, dy)"
-        @fire="(held) => setFire(held)"
-        @dash="doDash"
-        @missiles="doMissiles"
-        @shock="doShock"
-      />
-
-      <PauseOverlay
-        v-if="hud.paused && !hud.gameOver"
-        :score="hud.score"
-        :wave="hud.wave"
-        :music-on="settings.music"
-        :paused-by="pausedBy"
-        @resume="onPauseButton"
-        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
-        @quit="onLobby"
-        @toggle-music="onToggleMusic"
-      />
-
-      <GameOverOverlay
-        v-else-if="hud.gameOver"
-        :score="hud.finalScore"
-        :wave="hud.finalWave"
-        :stats="hud.finalStats"
-        :is-best="willBeBest"
-        :race="!!race"
-        :pilot-name="pilotName"
-        @save="onSave"
-        @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
-        @lobby="onLobby"
-        @standings="emit('room')"
-      />
-
-      <div
-        v-if="isPortraitPhone && hud.running && !hud.gameOver"
-        class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-surface/90 p-6 text-center backdrop-blur-sm"
-      >
-        <svg
-          class="h-10 w-10 text-accent"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          aria-hidden="true"
-        >
-          <polyline points="23 4 23 10 17 10" />
-          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-        </svg>
-        <div class="text-lg font-semibold text-zinc-100">Rotate your device</div>
-        <p class="max-w-65 text-[13px] text-zinc-500">
-          Neon Strike plays in landscape. Turn your phone sideways — your run is paused.
-        </p>
-      </div>
     </div>
+
+    <!-- HUD layer: presentational, driven by the reactive `hud` mirror. -->
+    <div class="pointer-events-none absolute inset-0">
+      <!-- ─── Desktop / keyboard + mouse ─────────────────────────────── -->
+      <template v-if="hudMode === 'desktop'">
+        <div class="hud-top hud-left absolute max-w-[calc(100%-13rem)]">
+          <Hud :hud="hud" :fps="fps" :show-fps="settings.showFps" />
+        </div>
+
+        <div class="hud-top hud-right absolute flex flex-col items-end gap-2">
+          <div class="pointer-events-auto flex gap-1.5">
+            <button
+              v-if="hud.running && !hud.gameOver"
+              type="button"
+              class="btn-icon bg-surface/70"
+              :title="hud.paused ? 'Resume (P)' : 'Pause (P)'"
+              :aria-label="hud.paused ? 'Resume' : 'Pause'"
+              @click="onPauseButton"
+            >
+              <UiIcon :name="hud.paused ? 'play' : 'pause'" cls="h-4 w-4" />
+            </button>
+          </div>
+          <Minimap v-if="!vp.compact" :width="150" @ready="setMinimapEl" />
+          <RacePanel v-if="race" :code="race.code" :my-uid="race.uid" :compact="vp.compact" />
+        </div>
+
+        <div class="hud-bottom hud-left hud-right absolute flex flex-wrap items-end justify-between gap-3">
+          <div class="w-40 lg:w-48">
+            <StatBar label="Integrity" :value="hud.health" :max="hud.maxHealth" tone="danger" />
+          </div>
+          <div class="order-first flex w-full justify-center sm:order-0 sm:w-auto">
+            <AbilityBar :hud="hud" />
+          </div>
+          <div class="w-32 lg:w-36">
+            <StatBar label="Energy" :value="hud.energy" :max="ENERGY.max" tone="accent" align="right" />
+          </div>
+        </div>
+      </template>
+
+      <!-- ─── Touch, landscape ────────────────────────────────────────── -->
+      <template v-else-if="hudMode === 'touch-landscape'">
+        <div class="hud-top hud-left absolute flex max-w-[58%] flex-col items-start gap-1.5">
+          <Hud :hud="hud" :fps="fps" :show-fps="settings.showFps" layout="strip" />
+          <div class="grid w-60 grid-cols-2 gap-3 rounded-xl border border-white/10 bg-surface/60 px-3 py-1.5">
+            <StatBar label="Integrity" :value="hud.health" :max="hud.maxHealth" tone="danger" compact />
+            <StatBar label="Energy" :value="hud.energy" :max="ENERGY.max" tone="accent" compact />
+          </div>
+        </div>
+
+        <div class="hud-top hud-right absolute flex flex-col items-end gap-1.5">
+          <div class="pointer-events-auto flex gap-1.5">
+            <button
+              v-if="canFullscreen"
+              type="button"
+              class="btn-icon bg-surface/70"
+              :aria-label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+              @click="toggleFullscreen"
+            >
+              <UiIcon :name="isFullscreen ? 'minimize' : 'maximize'" cls="h-4 w-4" />
+            </button>
+            <button
+              v-if="hud.running && !hud.gameOver"
+              type="button"
+              class="btn-icon bg-surface/70"
+              aria-label="Pause"
+              @click="onPauseButton"
+            >
+              <UiIcon name="pause" cls="h-4 w-4" />
+            </button>
+          </div>
+          <RacePanel v-if="race" :code="race.code" :my-uid="race.uid" compact />
+          <Minimap v-if="!vp.tiny" :width="112" @ready="setMinimapEl" />
+        </div>
+      </template>
+
+      <!-- ─── Touch, portrait ─────────────────────────────────────────── -->
+      <template v-else>
+        <div class="hud-top hud-left hud-right absolute flex flex-col gap-1.5">
+          <div class="flex items-start gap-2">
+            <div class="min-w-0 flex-1">
+              <Hud :hud="hud" :fps="fps" :show-fps="settings.showFps" layout="strip" />
+            </div>
+            <div class="pointer-events-auto flex shrink-0 gap-1.5">
+              <button
+                type="button"
+                class="btn-icon bg-surface/70"
+                :class="showMap ? 'btn-icon-active' : ''"
+                :aria-label="showMap ? 'Hide minimap' : 'Show minimap'"
+                :aria-pressed="showMap"
+                @click="showMap = !showMap"
+              >
+                <UiIcon name="map" cls="h-4 w-4" />
+              </button>
+              <button
+                v-if="hud.running && !hud.gameOver"
+                type="button"
+                class="btn-icon bg-surface/70"
+                aria-label="Pause"
+                @click="onPauseButton"
+              >
+                <UiIcon name="pause" cls="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+          <div class="grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-surface/60 px-3 py-1.5">
+            <StatBar label="Integrity" :value="hud.health" :max="hud.maxHealth" tone="danger" compact />
+            <StatBar label="Energy" :value="hud.energy" :max="ENERGY.max" tone="accent" compact />
+          </div>
+          <div v-if="race || showMap" class="flex items-start justify-between gap-2">
+            <RacePanel v-if="race" :code="race.code" :my-uid="race.uid" compact />
+            <Minimap v-if="showMap" :width="132" class="ml-auto" @ready="setMinimapEl" />
+          </div>
+        </div>
+      </template>
+
+      <Banner :banner="banner" :notice="notice" />
+    </div>
+
+    <div
+      v-if="syncWait > 0"
+      class="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-surface/85 px-6 text-center"
+    >
+      <div class="font-display text-5xl font-bold text-accent tabular-nums">{{ syncWait }}</div>
+      <div class="text-sm font-semibold text-zinc-300">Entering shared arena…</div>
+      <p class="text-[13px] text-zinc-500">Synced start — same map, same waves.</p>
+    </div>
+
+    <TouchControls
+      v-if="touchOn && hud.running && !hud.paused && !hud.gameOver && syncWait <= 0"
+      :hud="hud"
+      :size="settings.controlSize"
+      :left-handed="settings.leftHanded"
+      :portrait="vp.portrait"
+      @move="setTouchMove"
+      @aim="setTouchAimVector"
+      @fire="setFire"
+      @dash="doDash"
+      @missiles="doMissiles"
+      @ult="doShock"
+    />
+
+    <PauseOverlay
+      v-if="hud.paused && !hud.gameOver"
+      :score="hud.score"
+      :wave="hud.wave"
+      :music-on="settings.music"
+      :paused-by="pausedBy"
+      :ship-name="hud.characterName"
+      :ship-color="hud.characterColor"
+      :pilot-name="pilotName"
+      :touch="touchOn"
+      @resume="onPauseButton"
+      @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
+      @quit="onLobby"
+      @toggle-music="onToggleMusic"
+    />
+
+    <GameOverOverlay
+      v-else-if="hud.gameOver"
+      :score="hud.finalScore"
+      :wave="hud.finalWave"
+      :stats="hud.finalStats"
+      :is-best="willBeBest"
+      :race="!!race"
+      :pilot-name="pilotName"
+      @save="onSave"
+      @restart="() => start(props.characterId, props.race?.seed, props.race?.mapId ?? props.mapId, raceOpts())"
+      @lobby="onLobby"
+      @standings="emit('room')"
+    />
   </div>
 </template>

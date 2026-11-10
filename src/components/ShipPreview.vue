@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { drawShipDetails, setCanvasTheme, traceShip } from '../game/renderer.js';
 
 // Hangar preview drawn with the exact same path code as the in-game ship,
@@ -7,6 +7,8 @@ import { drawShipDetails, setCanvasTheme, traceShip } from '../game/renderer.js'
 const props = defineProps({
   id: { type: String, default: 'vanguard' },
   color: { type: String, default: '#38bdf8' },
+  /** Display width; the 8:5 aspect is kept. */
+  cls: { type: String, default: 'w-14' },
 });
 
 const canvasRef = ref(null);
@@ -35,10 +37,17 @@ function render() {
   ctx.restore();
 }
 
-onMounted(render);
+let observer = null;
+onMounted(() => {
+  render();
+  // Repaint when the theme flips (outline colours differ per theme).
+  observer = new MutationObserver(render);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+});
+onBeforeUnmount(() => observer?.disconnect());
 watch(() => [props.id, props.color], render);
 </script>
 
 <template>
-  <canvas ref="canvasRef" class="h-9 w-14 shrink-0" style="width: 56px; height: 36px" />
+  <canvas ref="canvasRef" class="block aspect-[8/5] h-auto shrink-0" :class="cls" />
 </template>

@@ -8,6 +8,12 @@ const STEP_MS = 1000 / 60;
 const MAX_STEPS = 5;
 // Camera zoom: below 1.0 shows more of the map (zoomed out).
 const ZOOM = 0.75;
+// World units across the short side of the stage on a large screen.
+const BASE_SHORT_UNITS = VIEW_HEIGHT / ZOOM;
+// Floor for screen px per world unit. Phones would otherwise render the
+// arena at ~0.35x (12px ships). Lower = more field of view, smaller
+// sprites — this is the single readability vs. visibility dial.
+const MIN_PX_PER_UNIT = 0.5;
 
 /**
  * Owns the engine, the single animation frame loop, and input wiring.
@@ -24,9 +30,8 @@ export function useGame(settings) {
   const minimapRef = ref(null);
   const game = shallowRef(null);
 
-  // Logical viewport in world units. Zoom stays 1:1 — bigger screens simply
-  // see more of the world, so the ship and enemies never shrink.
-  const view = reactive({ w: VIEW_WIDTH, h: VIEW_HEIGHT });
+  // Logical viewport in world units, plus the uniform screen scale.
+  const view = reactive({ w: VIEW_WIDTH, h: VIEW_HEIGHT, scale: 1 });
 
   let ctx = null;
   let minimapCtx = null;
@@ -86,7 +91,9 @@ export function useGame(settings) {
       canvas.width = Math.round(cssW * dpr);
       canvas.height = Math.round(cssH * dpr);
       ctx = canvas.getContext('2d');
-      ctx.setTransform(canvas.width / view.w, 0, 0, canvas.height / view.h, 0, 0);
+      // Uniform scale: the arena is never stretched.
+      const s = canvas.width / view.w;
+      ctx.setTransform(s, 0, 0, s, 0, 0);
     }
     if (minimap) {
       minimap.width = MINIMAP_SIZE * dpr;
@@ -99,9 +106,9 @@ export function useGame(settings) {
   }
 
   /**
-   * Fit the logical viewport to the stage box at fixed zoom. The camera sees
-   * fewer world units than the baseline, so everything renders bigger;
-   * larger screens simply reveal a bit more around the edges.
+   * Fit the logical viewport to the stage box. The short side shows
+   * BASE_SHORT_UNITS on big screens; small screens zoom in (down to
+   * MIN_PX_PER_UNIT) so sprites stay readable. Works in any orientation.
    */
   function fitView() {
     const canvas = canvasRef.value;
@@ -111,20 +118,16 @@ export function useGame(settings) {
     const rect = wrap.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
 
-    const aspect = rect.width / rect.height;
-    const baseAspect = VIEW_WIDTH / VIEW_HEIGHT;
-    let w;
-    let h;
-    if (aspect >= baseAspect) {
-      h = VIEW_HEIGHT;
-      w = Math.min(WORLD_WIDTH, Math.round(VIEW_HEIGHT * aspect));
-    } else {
-      w = VIEW_WIDTH;
-      h = Math.min(WORLD_HEIGHT, Math.round(VIEW_WIDTH / aspect));
-    }
-    w = Math.max(600, Math.min(WORLD_WIDTH, Math.round(w / ZOOM)));
-    h = Math.max(400, Math.min(WORLD_HEIGHT, Math.round(h / ZOOM)));
+    const cssW = rect.width;
+    const cssH = rect.height;
+    let scale = Math.min(1, Math.max(MIN_PX_PER_UNIT, Math.min(cssW, cssH) / BASE_SHORT_UNITS));
+    // Never reveal more than the world (huge / ultra-wide screens).
+    scale = Math.max(scale, cssW / WORLD_WIDTH, cssH / WORLD_HEIGHT);
+    const w = Math.round(cssW / scale);
+    const h = Math.round(cssH / scale);
 
+    view.scale = scale;
+    if (game.value) game.value.pxPerUnit = scale;
     if (Math.abs(w - view.w) > 1 || Math.abs(h - view.h) > 1) {
       view.w = w;
       view.h = h;
@@ -135,6 +138,7 @@ export function useGame(settings) {
 
   function setMinimapEl(el) {
     minimapRef.value = el;
+    if (!el) minimapCtx = null; // hidden map: stop drawing it
     scaleCanvas();
   }
 

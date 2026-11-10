@@ -9,6 +9,17 @@ const defaults = {
   shake: true,
   showFps: false,
   theme: 'dark',
+  // Touch play: 'auto' follows the device, 'on'/'off' force it.
+  touchControls: 'auto',
+  controlSize: 'm', // 's' | 'm' | 'l'
+  leftHanded: false, // swap move / aim sticks
+};
+
+// Allowed values for prefs set through setPref().
+const CHOICES = {
+  touchControls: ['auto', 'on', 'off'],
+  controlSize: ['s', 'm', 'l'],
+  leftHanded: [true, false],
 };
 
 function read() {
@@ -25,12 +36,15 @@ function read() {
 const state = reactive(read());
 // Normalize stored value (old installs / typos fall back to dark).
 if (state.theme !== 'light' && state.theme !== 'dark') state.theme = 'dark';
+for (const [key, allowed] of Object.entries(CHOICES)) {
+  if (!allowed.includes(state[key])) state[key] = defaults[key];
+}
 
 function applyTheme() {
   if (typeof document === 'undefined') return;
   document.documentElement.classList.toggle('light', state.theme === 'light');
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', state.theme === 'light' ? '#eef1f6' : '#08080c');
+  if (meta) meta.setAttribute('content', state.theme === 'light' ? '#edf0f5' : '#08080c');
 }
 
 watch(
@@ -71,5 +85,8 @@ export function useSettings() {
   function setTheme(v) {
     state.theme = v === 'light' ? 'light' : 'dark';
   }
-  return { settings: state, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme };
+  function setPref(key, value) {
+    if (CHOICES[key]?.includes(value)) state[key] = value;
+  }
+  return { settings: state, toggleMute, toggleMusic, setVolume, toggleShake, toggleFps, setTheme, setPref };
 }

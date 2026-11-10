@@ -78,7 +78,12 @@ export class Game {
     this.keys = new Set();
     this.moveVector = { x: 0, y: 0 }; // virtual joystick / touch
     this.pointer = { x: VIEW_WIDTH / 2, y: VIEW_HEIGHT / 2 };
+    // Twin-stick aim direction (touch). null = aim follows the pointer.
+    this.aimDir = null;
     this.fireHeld = false;
+    // Screen pixels per world unit (set by the view fit) — keeps canvas
+    // labels legible when phones render the world small.
+    this.pxPerUnit = 1;
 
     this.characterId = 'vanguard';
     this.character = CHARACTERS.vanguard;
@@ -105,6 +110,9 @@ export class Game {
   reset() {
     this.running = false;
     this.paused = false;
+    // A new run never inherits held input (stuck stick / fire after retry).
+    this.clearKeys();
+    this.aimDir = null;
     this.tick = 0;
     this.hitStopTicks = 0;
     this.score = 0;
@@ -273,6 +281,10 @@ export class Game {
   pause() {
     if (!this.running) return;
     this.paused = true;
+    // Touch sticks unmount while paused — drop their held state.
+    this.moveVector.x = 0;
+    this.moveVector.y = 0;
+    this.fireHeld = false;
     this.hud.paused = true;
   }
 
@@ -611,6 +623,7 @@ export class Game {
 
   /** Pointer position in view (canvas-logical) coordinates. */
   setPointer(x, y) {
+    this.aimDir = null;
     this.pointer.x = clamp(x, 0, this.camera.width);
     this.pointer.y = clamp(y, 0, this.camera.height);
   }
@@ -622,15 +635,34 @@ export class Game {
   setAimVector(dx, dy) {
     const len = Math.hypot(dx, dy);
     if (!(len > 0.001)) return;
-    const RANGE = 600;
-    this.pointer.x = clamp(this.player.x + (dx / len) * RANGE - this.camera.x, 0, this.camera.width);
-    this.pointer.y = clamp(this.player.y + (dy / len) * RANGE - this.camera.y, 0, this.camera.height);
+    this.aimDir = { x: dx / len, y: dy / len };
+    this.applyAimDir();
+  }
+
+  /**
+   * Re-derive the pointer from the stick direction (every tick while set):
+   * the camera moves with the ship, so a fixed screen point would drift.
+   * The range is cut where the ray leaves the view, so the pointer never
+   * needs clamping — which would bend the aim near world edges.
+   */
+  applyAimDir() {
+    const d = this.aimDir;
+    if (!d) return;
+    const { camera, player } = this;
+    const px = player.x - camera.x;
+    const py = player.y - camera.y;
+    const tx = d.x > 0 ? (camera.width - px) / d.x : d.x < 0 ? -px / d.x : Infinity;
+    const ty = d.y > 0 ? (camera.height - py) / d.y : d.y < 0 ? -py / d.y : Infinity;
+    const range = Math.max(1, Math.min(Math.min(camera.width, camera.height) * 0.45, tx * 0.98, ty * 0.98));
+    this.pointer.x = clamp(px + d.x * range, 0, camera.width);
+    this.pointer.y = clamp(py + d.y * range, 0, camera.height);
   }
 
   /** Dynamic viewport for responsive play. World units stay fixed. */
   setView(w, h) {
-    this.camera.width = clamp(Math.round(w), 600, WORLD_WIDTH);
-    this.camera.height = clamp(Math.round(h), 400, WORLD_HEIGHT);
+    // Portrait phones get a tall, narrow view — allow it.
+    this.camera.width = clamp(Math.round(w), 360, WORLD_WIDTH);
+    this.camera.height = clamp(Math.round(h), 360, WORLD_HEIGHT);
     this.pointer.x = clamp(this.pointer.x, 0, this.camera.width);
     this.pointer.y = clamp(this.pointer.y, 0, this.camera.height);
     this.updateCamera();
@@ -1554,6 +1586,7 @@ export class Game {
 
     this.tick += 1;
     this.timeTicks += 1;
+    this.applyAimDir();
 
     this.updateBuff();
     this.updateCombo();

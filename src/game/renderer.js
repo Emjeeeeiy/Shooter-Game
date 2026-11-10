@@ -25,6 +25,12 @@ const onScreen = (x, y, margin, camera) =>
  * shadowBlur is reserved for the player + missiles only (biggest cost);
  * bullets use a tracer stroke instead so 100+ bullets stay at 60fps.
  */
+// Name tags: >= 10 CSS px on screen however small the world renders.
+function labelFont(game) {
+  const size = Math.max(11, Math.round(10 / (game.pxPerUnit || 1)));
+  return `600 ${size}px Rajdhani, sans-serif`;
+}
+
 export function draw(ctx, game) {
   setCanvasTheme(!!game.lightMode);
   const { camera } = game;
@@ -457,7 +463,7 @@ function drawPlayer(ctx, game) {
   if (game.pilotName) {
     ctx.globalAlpha = 0.8;
     ctx.fillStyle = PAL.text;
-    ctx.font = '11px Inter, sans-serif';
+    ctx.font = labelFont(game);
     ctx.textAlign = 'center';
     ctx.fillText(game.pilotName, x, y - player.radius - 14);
   }
@@ -472,7 +478,7 @@ function drawRivals(ctx, game) {
   const { camera } = game;
   ctx.save();
   ctx.textAlign = 'center';
-  ctx.font = '11px Inter, sans-serif';
+  ctx.font = labelFont(game);
   for (const r of rivals) {
     const x = r.x - camera.x;
     const y = r.y - camera.y;

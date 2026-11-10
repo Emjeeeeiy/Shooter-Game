@@ -1,11 +1,23 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { CHARACTER_LIST, palette } from '../game/constants.js';
 import { tracePath, traceShip } from '../game/renderer.js';
 
-// Ambient backdrop: the four hulls dogfight drifting targets behind the
-// login and menu screens. Purely cosmetic, paused when hidden.
+// Ambient backdrop: the hulls dogfight drifting targets behind the login
+// and menu screens. Purely cosmetic: paused while covered (sheet open) or
+// the tab is hidden, and lighter on touch devices (fewer actors, 30fps).
+const props = defineProps({
+  paused: { type: Boolean, default: false },
+});
 const canvasRef = ref(null);
+
+const LITE = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+const FOE_COUNT = LITE ? 8 : 14;
+const SHIP_COUNT = LITE ? 5 : Infinity;
+const FRAME_MS = LITE ? 1000 / 30 : 0;
+const REDUCED = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+let lastFrame = 0;
+let resizeTimer = 0;
 
 const FOES = [
   { shape: 'diamond', color: palette.danger, r: 13 },
@@ -32,7 +44,7 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 function sizeCanvas() {
   const canvas = canvasRef.value;
   if (!canvas) return;
-  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+  const dpr = LITE ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
   const rect = canvas.parentElement.getBoundingClientRect();
   W = Math.max(320, rect.width);
   H = Math.max(320, rect.height);
@@ -48,7 +60,7 @@ function newTarget(ship) {
 }
 
 function initActors() {
-  ships = CHARACTER_LIST.map((c, i) => {
+  ships = CHARACTER_LIST.slice(0, SHIP_COUNT).map((c, i) => {
     const s = {
       id: c.id,
       color: c.color,
@@ -66,7 +78,7 @@ function initActors() {
     return s;
   });
   foes = [];
-  for (let i = 0; i < 14; i += 1) spawnFoe(true);
+  for (let i = 0; i < FOE_COUNT; i += 1) spawnFoe(true);
   bullets = [];
   parts = [];
 }
@@ -199,7 +211,7 @@ function step() {
     }
     if (dead) bullets.splice(i, 1);
   }
-  while (foes.length < 14) spawnFoe();
+  while (foes.length < FOE_COUNT) spawnFoe();
 
   for (let i = parts.length - 1; i >= 0; i -= 1) {
     const p = parts[i];
@@ -215,8 +227,9 @@ function step() {
 function render() {
   ctx.clearRect(0, 0, W, H);
 
-  // Faint grid for depth.
-  ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+  // Faint grid for depth (ink on light theme, white on dark).
+  const light = document.documentElement.classList.contains('light');
+  ctx.strokeStyle = light ? 'rgba(15,23,42,0.06)' : 'rgba(255,255,255,0.035)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0.5; x < W; x += 90) {
@@ -250,8 +263,10 @@ function render() {
     ctx.lineTo(-13, -4);
     ctx.closePath();
     ctx.fill();
-    ctx.shadowColor = s.color;
-    ctx.shadowBlur = 14;
+    if (!LITE) {
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 14;
+    }
     ctx.fillStyle = s.color;
     traceShip(ctx, s.id);
     ctx.fill();
@@ -284,43 +299,70 @@ function render() {
   ctx.globalAlpha = 1;
 }
 
-function loop() {
+function loop(now) {
   raf = requestAnimationFrame(loop);
+  if (FRAME_MS && now - lastFrame < FRAME_MS) return;
+  lastFrame = now;
   step();
   render();
 }
 
-function onResize() {
-  sizeCanvas();
+function play() {
+  if (raf || REDUCED || props.paused || document.hidden) return;
+  raf = requestAnimationFrame(loop);
 }
+
+function halt() {
+  cancelAnimationFrame(raf);
+  raf = 0;
+}
+
+function onVisibility() {
+  if (document.hidden) halt();
+  else play();
+}
+
+// Mobile address bars resize the viewport constantly — debounce.
+function onResize() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    sizeCanvas();
+    if (!raf && ctx) render();
+  }, 150);
+}
+
+watch(
+  () => props.paused,
+  (p) => (p ? halt() : play()),
+);
 
 onMounted(() => {
   sizeCanvas();
   initActors();
-  if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-    render(); // single static frame, no motion
-    return;
-  }
+  render(); // first frame (and the only one with reduced motion)
   window.addEventListener('resize', onResize);
-  raf = requestAnimationFrame(loop);
+  document.addEventListener('visibilitychange', onVisibility);
+  play();
 });
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(raf);
+  halt();
+  clearTimeout(resizeTimer);
   window.removeEventListener('resize', onResize);
+  document.removeEventListener('visibilitychange', onVisibility);
 });
 </script>
 
 <template>
   <div class="battle-bg pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
     <canvas ref="canvasRef" class="block h-full w-full opacity-70" />
-    <!-- Readability gradient over the battle. -->
+    <!-- Readability gradient over the battle (follows the surface token). -->
     <div
       class="absolute inset-0"
       style="
         background:
-          radial-gradient(ellipse 90% 70% at 50% 40%, transparent 30%, rgba(9, 9, 11, 0.72) 100%),
-          linear-gradient(180deg, rgba(9, 9, 11, 0.55) 0%, rgba(9, 9, 11, 0.25) 40%, rgba(9, 9, 11, 0.6) 100%);
+          radial-gradient(ellipse 90% 70% at 50% 40%, transparent 30%, color-mix(in srgb, var(--color-surface) 72%, transparent) 100%),
+          linear-gradient(180deg, color-mix(in srgb, var(--color-surface) 55%, transparent) 0%, color-mix(in srgb, var(--color-surface) 25%, transparent) 40%, color-mix(in srgb, var(--color-surface) 60%, transparent) 100%);
       "
     />
   </div>

@@ -1,5 +1,18 @@
 <script setup>
-defineProps({ bare: { type: Boolean, default: false } });
+defineProps({
+  bare: { type: Boolean, default: false },
+  /** 'keyboard' | 'touch' — which control scheme to explain. */
+  mode: { type: String, default: 'keyboard' },
+});
+
+const touchControls = [
+  { badge: 'Left', action: 'Move — touch and drag anywhere on the left side' },
+  { badge: 'Aim', action: 'Aim and fire — drag the right stick; tap its centre to shoot ahead' },
+  { badge: 'Dash', action: 'Dash — invincible, kills on contact (10 energy)' },
+  { badge: 'MSL', action: 'Missiles — homing volley (25 energy)' },
+  { badge: 'Ult', action: 'Ship ultimate — varies by hull' },
+  { badge: '❚❚', action: 'Pause — top-right button' },
+];
 
 const controls = [
   { keys: ['W', 'A', 'S', 'D'], action: 'Move' },
@@ -36,33 +49,45 @@ const tips = [
 <template>
   <aside :class="bare ? 'w-full' : 'panel w-full p-5'">
     <div class="label">How to play</div>
-    <h2 class="mt-1 text-lg font-semibold text-zinc-100">Briefing</h2>
+    <h2 class="font-display mt-1 text-base font-bold text-zinc-100">Briefing</h2>
 
-    <div class="mt-4 space-y-2">
-      <div v-for="c in controls" :key="c.action" class="flex items-center gap-2.5">
-        <span class="flex w-26 shrink-0 flex-wrap gap-1">
-          <kbd v-for="k in c.keys" :key="k">{{ k }}</kbd>
-        </span>
-        <span class="text-[12px] text-zinc-400">{{ c.action }}</span>
-      </div>
+    <div class="mt-3 space-y-2">
+      <template v-if="mode === 'touch'">
+        <div v-for="c in touchControls" :key="c.badge" class="flex items-start gap-2.5">
+          <span
+            class="inline-flex min-w-11 shrink-0 justify-center rounded-md border border-white/12 bg-white/6 px-1.5 py-0.5 text-[11px] font-bold text-zinc-300"
+          >
+            {{ c.badge }}
+          </span>
+          <span class="text-[13px] leading-snug text-zinc-400">{{ c.action }}</span>
+        </div>
+      </template>
+      <template v-else>
+        <div v-for="c in controls" :key="c.action" class="flex items-center gap-2.5">
+          <span class="flex w-26 shrink-0 flex-wrap gap-1">
+            <kbd v-for="k in c.keys" :key="k">{{ k }}</kbd>
+          </span>
+          <span class="text-[13px] leading-snug text-zinc-400">{{ c.action }}</span>
+        </div>
+      </template>
     </div>
 
-    <div class="mt-5 border-t border-white/10 pt-4">
+    <div class="mt-4 border-t border-white/10 pt-3">
       <div class="label">Targets</div>
-      <ul class="mt-2 space-y-1.5">
-        <li v-for="t in targets" :key="t.name" class="flex items-center gap-2">
+      <ul class="mt-2 grid gap-1.5 sm:grid-cols-2">
+        <li v-for="t in targets" :key="t.name" class="flex min-w-0 items-center gap-2">
           <svg class="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" :class="t.color">
             <polygon :points="t.shape" fill="currentColor" fill-opacity="0.9" />
           </svg>
-          <span class="text-[12px] font-medium text-zinc-300">{{ t.name }}</span>
-          <span class="text-[12px] text-zinc-500">{{ t.effect }}</span>
+          <span class="shrink-0 text-[13px] font-medium text-zinc-300">{{ t.name }}</span>
+          <span class="truncate text-[13px] text-zinc-500">{{ t.effect }}</span>
         </li>
       </ul>
     </div>
 
-    <div class="mt-5 border-t border-white/10 pt-4">
+    <div class="mt-4 border-t border-white/10 pt-3">
       <div class="label">Tips</div>
-      <ul class="mt-2 list-disc space-y-1.5 pl-4 text-[12px] leading-relaxed text-zinc-400">
+      <ul class="mt-2 list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-zinc-400">
         <li v-for="tip in tips" :key="tip">{{ tip }}</li>
       </ul>
     </div>

@@ -1,6 +1,24 @@
 @import 'tailwindcss';
 
 /*
+ * Viewport tiers (the app never scrolls as a page — every screen fits):
+ *   compact — phones: narrow (< 768px) OR short (≤ 540px tall, i.e. landscape phones)
+ *   roomy   — tablets / desktops: wide AND tall enough for multi-column layouts
+ *   short   — landscape phones: trade vertical space for side-by-side layouts
+ * Built-ins `portrait:`, `landscape:`, `pointer-coarse:`, `pointer-fine:` are used too.
+ */
+@custom-variant compact {
+  @media (max-width: 767.98px) {
+    @slot;
+  }
+  @media (max-height: 540px) {
+    @slot;
+  }
+}
+@custom-variant roomy (@media (min-width: 768px) and (min-height: 541px));
+@custom-variant short (@media (max-height: 540px));
+
+/*
  * Design tokens. These mirror src/game/constants.js `palette` so the canvas and
  * the DOM never drift apart.
  */
@@ -21,9 +39,9 @@
   --color-border: #ffffff0d;
   --color-border-hover: #ffffff1a;
 
-  --font-sans: 'Rajdhani', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: 'Rajdhani', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-display: 'Orbitron', 'Rajdhani', sans-serif;
-  --font-ui: 'Rajdhani', 'Inter', ui-sans-serif, sans-serif;
+  --font-ui: 'Rajdhani', ui-sans-serif, sans-serif;
 
   --animate-banner: banner 1.8s ease-out forwards;
   --animate-notice: notice 2.2s ease-out forwards;
@@ -33,8 +51,6 @@
   --animate-combo: combo 0.25s ease-out;
   --animate-fade-in: fade-in 0.25s ease-out;
   --animate-slide-up: slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  --animate-pulse-glow: pulse-glow 2.5s ease-in-out infinite;
-  --animate-float: float 3s ease-in-out infinite;
 }
 
 @keyframes banner {
@@ -151,32 +167,26 @@
   }
 }
 
-@keyframes pulse-glow {
-  0%,
-  100% {
-    opacity: 0.6;
-    box-shadow: 0 0 12px 2px var(--color-accent-glow);
-  }
-  50% {
-    opacity: 1;
-    box-shadow: 0 0 24px 6px var(--color-accent-glow);
-  }
-}
-
-@keyframes float {
-  0%,
-  100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-6px);
-  }
-}
-
 @layer base {
-  html {
+  :root {
     color-scheme: dark;
+    /* Safe-area insets (notch, home indicator) — viewport-fit=cover is on. */
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+    /* Content insets (aliases kept for layout code that references them). */
+    --sal-c: var(--sal);
+    --sab-c: var(--sab);
+    --header-h: 56px;
   }
+
+  @media (max-height: 540px) {
+    :root {
+      --header-h: 44px;
+    }
+  }
+
 
   /* ── Light theme: same token names, mirrored surfaces ─────────────────── */
   html.light {
@@ -200,9 +210,9 @@
     --color-zinc-100: #27272a;
     --color-zinc-200: #3f3f46;
     --color-zinc-300: #52525b;
-    --color-zinc-400: #71717a;
+    --color-zinc-400: #63636b;
     --color-zinc-500: #71717a;
-    --color-zinc-600: #8e8e96;
+    --color-zinc-600: #82828b;
     --color-zinc-700: #d4d4d8;
     --color-zinc-800: #e4e4e7;
     --color-zinc-900: #f4f4f5;
@@ -211,46 +221,47 @@
     --color-white: #1d222c;
   }
 
-  /* Arena force-dark scope retired: the canvas now follows the UI theme. */
-  html.light .theme-dark-retired {
-    color-scheme: dark;
-    --color-surface: #08080c;
-    --color-panel: #0e0e14;
-    --color-panel-hover: #13131c;
-    --color-accent: #38bdf8;
-    --color-accent-glow: #38bdf830;
-    --color-danger: #fb7185;
-    --color-skill: #fbbf24;
-    --color-shock: #34d399;
-    --color-missile: #fb923c;
-    --color-repair: #4ade80;
-    --color-magnet: #a78bfa;
-    --color-boss: #f472b6;
-    --color-border: #ffffff0d;
-    --color-border-hover: #ffffff1a;
-    --color-zinc-50: #fafafa;
-    --color-zinc-100: #f4f4f5;
-    --color-zinc-200: #e4e4e7;
-    --color-zinc-300: #d4d4d8;
-    --color-zinc-400: #a1a1aa;
-    --color-zinc-500: #71717a;
-    --color-zinc-600: #52525b;
-    --color-zinc-700: #3f3f46;
-    --color-zinc-800: #27272a;
-    --color-zinc-900: #18181b;
-    --color-zinc-950: #09090b;
-    --color-white: #ffffff;
+  /* The document itself never scrolls: each screen fits the viewport and only
+     inner panels (lists) scroll. Also blocks pull-to-refresh and bounce. */
+  html,
+  body,
+  #app {
+    height: 100%;
+  }
+
+  html,
+  body {
+    overflow: hidden;
+    overscroll-behavior: none;
   }
 
   body {
-    @apply bg-surface text-zinc-100 antialiased;
-    font-family: 'Rajdhani', 'Inter', ui-sans-serif, system-ui, sans-serif;
+    @apply bg-surface font-sans text-zinc-100 antialiased;
     font-size: 16px;
     letter-spacing: 0.01em;
     -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
   }
 
-  /* Invisible scrollbars project-wide — content still scrolls. */
+  /* No double-tap zoom delay on controls. */
+  button,
+  a,
+  input,
+  label,
+  select,
+  textarea,
+  [role='button'] {
+    touch-action: manipulation;
+  }
+
+  button:not(:disabled),
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  /* Invisible scrollbars project-wide — `scroll-area` opts back in to a thin one. */
   *,
   *::before,
   *::after {
@@ -262,241 +273,280 @@
     display: none;
   }
 
-  /* Keyboard hints, used across the start screen and ability bar. */
+  /* Keyboard hints, used across the hangar, pause menu and ability bar. */
   kbd {
     @apply inline-flex min-w-6 items-center justify-center rounded-md border border-white/12
       bg-white/6 px-1.5 py-0.5 font-sans text-[11px] font-medium text-zinc-300;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
 
-/* ─── Utilities ─────────────────────────────────────────────────────────── */
+/* ─── Layout utilities ──────────────────────────────────────────────────── */
+
+/* Horizontal page gutter that respects notches in landscape. */
+@utility px-safe {
+  padding-left: max(1rem, var(--sal-c));
+  padding-right: max(1rem, var(--sar));
+}
+
+@utility pt-safe {
+  padding-top: var(--sat);
+}
+
+@utility pb-safe {
+  padding-bottom: var(--sab);
+}
+
+@utility pl-safe {
+  padding-left: var(--sal);
+}
+
+/* In-game HUD edge offsets (clear notches / home indicator). */
+@utility hud-top {
+  top: max(0.75rem, calc(var(--sat) + 0.375rem));
+}
+@utility hud-bottom {
+  bottom: max(0.75rem, calc(var(--sab) + 0.375rem));
+}
+@utility hud-left {
+  left: max(0.75rem, calc(var(--sal) + 0.375rem));
+}
+@utility hud-right {
+  right: max(0.75rem, calc(var(--sar) + 0.375rem));
+}
+
+/* Inner scroll region: the only thing that scrolls. Thin themed scrollbar so
+   it is discoverable on desktop. */
+@utility scroll-area {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-white) 14%, transparent) transparent;
+
+  &::-webkit-scrollbar {
+    display: block;
+    width: 6px;
+    height: 6px;
+  }
+  &::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-white) 14%, transparent);
+  }
+}
+
+/* Horizontal snap strip (ship pickers etc.). */
+@utility scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ─── Typography ────────────────────────────────────────────────────────── */
 
 @utility label {
-  font-family: 'Rajdhani', sans-serif;
-  @apply text-[10px] font-semibold tracking-[0.22em] text-zinc-500 uppercase;
+  font-family: var(--font-ui);
+  @apply text-[11px] leading-tight font-semibold tracking-[0.2em] text-zinc-500 uppercase;
 }
 
 /* Orbitron — game title, GAME OVER, large scores, wave headings */
 @utility font-display {
-  font-family: 'Orbitron', sans-serif;
-  letter-spacing: 0.04em;
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
 }
 
 /* Rajdhani — buttons, nav, HUD labels, menus */
 @utility font-ui {
-  font-family: 'Rajdhani', sans-serif;
+  font-family: var(--font-ui);
   letter-spacing: 0.02em;
 }
 
-/* Base glass panel */
+/* ─── Surfaces ──────────────────────────────────────────────────────────── */
+
+/* Base glass panel. Touch devices drop the blur (costly over animated
+   backgrounds) for a near-opaque fill. */
 @utility panel {
-  @apply rounded-2xl border border-white/[0.06] bg-panel/90 backdrop-blur-xl;
+  @apply rounded-2xl border border-white/7 bg-panel/90 backdrop-blur-xl;
+  @apply pointer-coarse:bg-panel/95 pointer-coarse:backdrop-blur-none;
 }
 
-/* Elevated glass panel with subtle glow */
+/* Elevated glass panel with depth */
 @utility panel-elevated {
-  @apply rounded-2xl border border-white/10 bg-panel/95 backdrop-blur-2xl shadow-2xl;
-  box-shadow: 0 0 0 1px rgba(255,255,255,0.04), 0 24px 48px -12px rgba(0,0,0,0.7), 0 8px 16px rgba(0,0,0,0.5);
+  @apply rounded-2xl border border-white/10 bg-panel/95 backdrop-blur-2xl;
+  @apply pointer-coarse:bg-panel pointer-coarse:backdrop-blur-none;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 24px 48px -12px rgba(0, 0, 0, 0.7),
+    0 8px 16px rgba(0, 0, 0, 0.5);
 }
 
-/* Interactive card */
-@utility card {
-  @apply rounded-2xl border border-white/[0.06] bg-panel/80 backdrop-blur-xl transition-all duration-200;
+/* Inset tile inside a panel (stats, sub-sections). */
+@utility tile {
+  @apply rounded-xl border border-white/7 bg-white/3;
 }
 
-/* Accent glow border */
+/* Accent glow (theme-aware). */
 @utility glow-accent {
-  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.3), 0 0 20px rgba(56, 189, 248, 0.15);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-accent) 30%, transparent),
+    0 0 20px var(--color-accent-glow);
 }
 
-/* Danger glow border */
-@utility glow-danger {
-  box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.3), 0 0 20px rgba(251, 113, 133, 0.1);
-}
+/* ─── Buttons ───────────────────────────────────────────────────────────── */
 
-/* Skill glow border */
-@utility glow-skill {
-  box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.3), 0 0 20px rgba(251, 191, 36, 0.1);
-}
-
-/* Page section fade-in */
-@utility screen-enter {
-  @apply animate-fade-in;
-}
-
-/* Button base style */
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-surface;
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all duration-150 select-none focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-55;
+  @apply pointer-coarse:min-h-11;
 }
 
-/* Primary CTA button (fixed dark ink reads on accent in both themes) */
+/* Primary CTA (fixed dark ink reads on accent in both themes) */
 @utility btn-primary {
-  @apply btn bg-accent text-ink hover:brightness-110 active:scale-95;
+  @apply btn bg-accent text-ink hover:brightness-110 active:scale-[0.97];
 }
 
-/* Ghost / secondary button */
+/* Orange CTA (versus / multiplayer) */
+@utility btn-missile {
+  @apply btn bg-missile text-ink hover:brightness-110 active:scale-[0.97];
+}
+
+/* Ghost / secondary */
 @utility btn-ghost {
-  @apply btn border border-white/10 text-zinc-300 hover:border-white/20 hover:bg-white/5 hover:text-zinc-100 active:scale-95;
+  @apply btn border border-white/10 text-zinc-300 hover:border-white/20 hover:bg-white/5 hover:text-zinc-100 active:scale-[0.97];
 }
 
-/* Danger button */
+/* Danger */
 @utility btn-danger {
-  @apply btn border border-danger/30 text-danger hover:bg-danger/10 hover:border-danger/50 active:scale-95;
+  @apply btn border border-danger/30 text-danger hover:border-danger/50 hover:bg-danger/10 active:scale-[0.97];
 }
 
-/* Icon button */
+/* Small pill button for in-row actions (still ≥ 32px / 40px on touch). */
+@utility btn-sm {
+  @apply min-h-8 rounded-lg px-3 py-1 text-xs pointer-coarse:min-h-10;
+}
+
+/* Square icon button — 40px, 44px on touch. */
 @utility btn-icon {
-  @apply inline-flex items-center justify-center rounded-xl border border-white/10 p-2 text-zinc-400 transition-all duration-150 hover:border-white/20 hover:bg-white/5 hover:text-zinc-200 active:scale-95;
+  @apply relative inline-flex size-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-zinc-400 transition-all duration-150 hover:border-white/20 hover:bg-white/5 hover:text-zinc-200 focus-visible:ring-2 focus-visible:ring-accent/60 focus-visible:outline-none active:scale-95;
+  @apply pointer-coarse:size-11;
 }
 
-/* Active icon button */
+/* Active state for btn-icon (combine: class="btn-icon btn-icon-active"). */
 @utility btn-icon-active {
-  @apply inline-flex items-center justify-center rounded-xl p-2 transition-all duration-150 active:scale-95;
-  background: rgba(56, 189, 248, 0.15);
-  border: 1px solid rgba(56, 189, 248, 0.3);
-  color: #38bdf8;
+  @apply border-accent/35 bg-accent/15 text-accent hover:border-accent/50 hover:bg-accent/20 hover:text-accent;
 }
 
-/* Toggle switch track */
-@utility toggle-track {
-  @apply relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full border transition-all duration-200;
-}
+/* ─── Form controls ─────────────────────────────────────────────────────── */
 
-/* Stat bar filled segment */
-@utility stat-pip-active {
-  @apply h-1.5 w-6 rounded-full;
-}
-
-/* Stat bar empty segment */
-@utility stat-pip-empty {
-  @apply h-1.5 w-6 rounded-full bg-white/10;
-}
-
-/* Input field */
+/* 16px on touch so iOS never zooms on focus. */
 @utility input-field {
-  @apply w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-sm text-zinc-100 placeholder-zinc-600 transition-colors focus:border-accent/50 focus:bg-white/8 focus:outline-none;
+  @apply min-h-11 w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-base text-zinc-100 placeholder-zinc-600 transition-colors focus:border-accent/50 focus:bg-white/8 focus:outline-none pointer-fine:min-h-10 pointer-fine:text-sm;
 }
 
-/* ─── Tablet compact mode ─────────────────────────────────────────────────── */
-/* Coarse-pointer tablets get a scaled-down UI so menu pages fit without
-   scrolling. rem-based spacing/typography shrink; the canvas is unaffected.
-   Unlayered on purpose so it wins over utilities within this query. */
-@media (pointer: coarse) and (min-width: 768px) {
-  html {
-    font-size: 14px;
+/* Native range with a themed, visible thumb. Set --fill: N% inline. */
+@utility range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 32px;
+  background: transparent;
+  cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--color-accent) var(--fill, 50%),
+      color-mix(in srgb, var(--color-white) 10%, transparent) var(--fill, 50%)
+    );
   }
-  .app-content {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
-    gap: 1rem;
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    margin-top: -8px;
+    border-radius: 9999px;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 22%, transparent);
   }
-  .app-modal {
-    padding-top: 1rem;
-    padding-bottom: 1rem;
+  &::-moz-range-track {
+    height: 6px;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-white) 10%, transparent);
+  }
+  &::-moz-range-progress {
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--color-accent);
+  }
+  &::-moz-range-thumb {
+    width: 22px;
+    height: 22px;
+    border: 0;
+    border-radius: 9999px;
+    background: var(--color-accent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  }
+  &:focus-visible {
+    outline: none;
+  }
+  &:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 40%, transparent);
   }
 }
 
-/* Rank badge for leaderboard */
-@utility rank-badge {
-  @apply inline-flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold tabular-nums;
-}
-
-/* ─── Light theme depth + dimming ─────────────────────────────────────────── */
-html.light .panel,
-html.light .panel-elevated,
-html.light .card {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), 0 8px 24px -12px rgba(15, 23, 42, 0.12);
-}
-
-html.light .panel-elevated {
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), 0 24px 48px -12px rgba(15, 23, 42, 0.18);
-}
-
-/* Neon menu backdrop stays subtle behind light panels */
-html.light .battle-bg {
-  opacity: 0.35;
-}
-
-/* ─── Theme-aware switch (settings toggles) ───────────────────────────────── */
+/* Toggle switch (theme-aware). */
 @utility switch-track-themed {
-  @apply relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border transition-all duration-200;
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.1);
+  @apply relative inline-flex h-7 w-12 shrink-0 cursor-pointer items-center rounded-full border transition-all duration-200;
+  background: color-mix(in srgb, var(--color-white) 6%, transparent);
+  border-color: color-mix(in srgb, var(--color-white) 12%, transparent);
 }
 
 @utility switch-thumb {
-  @apply inline-block h-4 w-4 rounded-full shadow-sm transition-all duration-200;
-  background: #52525b;
+  @apply inline-block h-5 w-5 rounded-full shadow-sm transition-all duration-200;
+  background: var(--color-zinc-500);
   transform: translateX(3px);
 }
 
 .switch-track-themed[data-on='true'] {
-  background: rgba(56, 189, 248, 0.3);
-  border-color: rgba(56, 189, 248, 0.5);
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+  border-color: color-mix(in srgb, var(--color-accent) 50%, transparent);
 }
 
 .switch-track-themed[data-on='true'] .switch-thumb {
-  background: #38bdf8;
-  transform: translateX(21px);
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.6);
+  background: var(--color-accent);
+  transform: translateX(23px);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--color-accent) 60%, transparent);
 }
 
-html.light .switch-track-themed {
-  background: rgba(15, 23, 42, 0.08);
-  border-color: rgba(15, 23, 42, 0.14);
-}
-
-html.light .switch-track-themed .switch-thumb {
-  background: #8e8e96;
-}
-
-html.light .switch-track-themed[data-on='true'] {
-  background: rgba(2, 132, 199, 0.25);
-  border-color: rgba(2, 132, 199, 0.45);
-}
-
-html.light .switch-track-themed[data-on='true'] .switch-thumb {
-  background: #0284c7;
-  box-shadow: 0 0 8px rgba(2, 132, 199, 0.5);
-}
-
-/* ─── Theme-aware slider track + hairline divide ──────────────────────────── */
-@utility slider-track {
-  @apply h-1.5 w-full overflow-hidden rounded-full;
-  background: rgba(255, 255, 255, 0.08);
-}
-
-html.light .slider-track {
-  background: rgba(15, 23, 42, 0.1);
-}
-
+/* Hairline row dividers (theme-aware). */
 @utility divide-themed {
-  border-color: rgba(255, 255, 255, 0.05);
+  & > * + * {
+    border-top: 1px solid color-mix(in srgb, var(--color-white) 6%, transparent);
+  }
 }
 
-html.light .divide-themed {
-  border-color: rgba(15, 23, 42, 0.08);
-}
-
-.divide-themed > * + * {
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-html.light .divide-themed > * + * {
-  border-top-color: rgba(15, 23, 42, 0.08);
-}
-
-/* ─── Segmented control (theme picker) ────────────────────────────────────── */
+/* ─── Segmented control ─────────────────────────────────────────────────── */
 @utility seg-wrap {
-  @apply grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/5 p-1;
+  @apply flex gap-1 rounded-xl border border-white/10 bg-white/5 p-1;
 }
 
 @utility seg-btn {
-  @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-zinc-500 transition-all hover:text-zinc-300;
+  @apply inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold whitespace-nowrap text-zinc-500 transition-all select-none hover:text-zinc-300 disabled:cursor-not-allowed disabled:opacity-50 pointer-coarse:min-h-9;
 }
 
 @utility seg-btn-active {
-  @apply bg-white/10 text-zinc-100;
+  @apply bg-white/10 text-zinc-100 hover:text-zinc-100;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
 }
 
@@ -504,4 +554,61 @@ html.light .seg-btn-active {
   background: #ffffff;
   color: #18181b;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.15);
+}
+
+/* Rank badge for leaderboard */
+@utility rank-badge {
+  @apply inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums;
+}
+
+/* ─── Light theme depth ───────────────────────────────────────────────────── */
+html.light .panel {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.06),
+    0 8px 24px -12px rgba(15, 23, 42, 0.12);
+}
+
+html.light .panel-elevated {
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.08),
+    0 24px 48px -12px rgba(15, 23, 42, 0.18);
+}
+
+/* Neon menu backdrop stays subtle behind light panels */
+html.light .battle-bg {
+  opacity: 0.35;
+}
+
+/* ─── Screen transitions ──────────────────────────────────────────────────── */
+.screen-enter-active {
+  transition:
+    opacity 0.2s ease-out,
+    transform 0.2s ease-out;
+}
+.screen-leave-active {
+  transition: opacity 0.12s ease-in;
+}
+.screen-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+.screen-leave-to {
+  opacity: 0;
+}
+
+.sheet-enter-active,
+.sheet-leave-active {
+  transition: opacity 0.18s ease;
+}
+.sheet-enter-active .sheet-panel,
+.sheet-leave-active .sheet-panel {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sheet-enter-from,
+.sheet-leave-to {
+  opacity: 0;
+}
+.sheet-enter-from .sheet-panel,
+.sheet-leave-to .sheet-panel {
+  transform: translateY(14px);
 }
